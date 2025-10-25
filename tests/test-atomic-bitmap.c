@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdint.h>
 
 #define MAX_KEY_CODE 256
 #define NUM_THREADS 4
