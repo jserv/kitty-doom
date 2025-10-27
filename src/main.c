@@ -54,17 +54,13 @@ static void exit_handler(int exit_code)
     exit_code_global = exit_code;
     exit_requested = true;
 
-    /* If error occurred during initialization (exit_code != 0),
-     * must terminate immediately to prevent undefined behavior.
-     * The error message has already been captured by print_handler.
+    /* If an error occurred (exit_code != 0), print the last message from
+     * DOOM. The main loop will see the `exit_requested` flag and terminate
+     * gracefully, ensuring cleanup is performed.
      */
-    if (exit_code != 0) {
-        if (last_print_string) {
-            fprintf(stderr, "\nDOOM Error: %s\n", last_print_string);
-            fflush(stderr);
-        }
-        /* Cannot continue after DOOM error - must exit immediately */
-        exit(EXIT_FAILURE);
+    if (exit_code != 0 && last_print_string) {
+        fprintf(stderr, "\nDOOM Error: %s\n", last_print_string);
+        fflush(stderr);
     }
 }
 
