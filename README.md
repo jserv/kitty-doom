@@ -5,7 +5,6 @@ Play the legendary first-person shooter in terminals that support the protocol.
 
 Supported Terminals
 - [Kitty](https://sw.kovidgoyal.net/kitty/) - Full support, best performance
-- [Ghostty](https://ghostty.org) - Full support, excellent performance
 
 ## Features
 
@@ -57,7 +56,7 @@ Supported Terminals
 - GNU Make 3.81 or later
 - POSIX pthread library
 - curl or wget for dependency download
-- Terminal with Kitty Graphics Protocol support (Kitty, Ghostty, etc.)
+- Terminal with Kitty Graphics Protocol support (e.g., Kitty)
 
 ## Quick Start
 
