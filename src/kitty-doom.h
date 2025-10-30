@@ -58,9 +58,9 @@ static inline os_t *os_create(void)
         return NULL;
     }
 
-    /* Set new terminal attributes for raw mode */
+    /* Switch to raw mode (disables canonical input, flow control, etc.) */
     struct termios new_term_attributes = os->term_attributes;
-    new_term_attributes.c_lflag &= ~(ICANON | ISIG | ECHO);
+    cfmakeraw(&new_term_attributes);
 
     if (tcsetattr(STDIN_FILENO, TCSANOW, &new_term_attributes) == -1) {
         free(os);
