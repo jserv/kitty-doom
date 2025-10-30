@@ -8,10 +8,10 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <stdint.h>
 
 #define MAX_KEY_CODE 256
 #define NUM_THREADS 4
@@ -125,7 +125,9 @@ int main(void)
     pthread_t threads[NUM_THREADS];
     int thread_ids[NUM_THREADS];
 
-    printf("Lock-free bitmap concurrent test\n");
+    printf("========================================\n");
+    printf("  Lock-Free Atomic Bitmap Test\n");
+    printf("========================================\n");
     printf("Threads: %d, Iterations: %d per thread\n\n", NUM_THREADS,
            ITERATIONS);
 
@@ -238,6 +240,7 @@ int main(void)
 
     printf("Completed 1000 rounds of same-bit contention\n");
     printf("Same-bit contention verified\n");
+    printf("========================================\n");
 
     return 0;
 }

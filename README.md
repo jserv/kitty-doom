@@ -74,11 +74,25 @@ The build system automatically downloads `PureDOOM.h` and `DOOM1.WAD` (shareware
 ```bash
 make                  # Build the project (downloads dependencies automatically)
 make run              # Build and run the game
-make check            # Run all tests
+make check            # Run all tests and performance regression checks
+make profile          # Build with profiling enabled (for performance analysis)
 make download-assets  # Manually download DOOM1.WAD and PureDOOM.h
 make clean            # Remove build artifacts
 make distclean        # Remove all generated files including downloads
 ```
+
+### Performance Testing
+
+```bash
+# Run all tests including performance regression
+make check
+
+# Development: Real-time profiling (requires Kitty/Ghostty terminal)
+make profile
+./build/kitty-doom 2> profile.log
+```
+
+See [PERFORMANCE_SUMMARY.md](PERFORMANCE_SUMMARY.md) for detailed performance analysis.
 
 ## Running the Game
 

@@ -118,7 +118,9 @@ int main(void)
         return 1;
     }
 
-    printf("Frame Differencing Benchmark\n");
+    printf("========================================\n");
+    printf("  Frame Differencing Benchmark\n");
+    printf("========================================\n");
     printf("Frame size: %dx%d (%zu bytes)\n\n", WIDTH, HEIGHT,
            (size_t) FRAME_SIZE);
 
@@ -161,8 +163,9 @@ int main(void)
     free(frame1);
     free(frame2);
 
-    printf("Frame skip threshold: 5%%\n");
+    printf("\nFrame skip threshold: 5%%\n");
     printf("Frames with < 5%% change will be skipped, saving bandwidth.\n");
+    printf("========================================\n");
 
     return 0;
 }

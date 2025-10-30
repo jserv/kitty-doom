@@ -13,6 +13,7 @@
 
 #include "base64.h"
 #include "kitty-doom.h"
+#include "profiling.h"
 
 #if defined(__aarch64__) || defined(__ARM_NEON)
 #include "arch/neon-framediff.h"
@@ -108,6 +109,8 @@ void renderer_render_frame(renderer_t *restrict r,
     if (!r || !rgb24_frame)
         return;
 
+    PROFILE_START(); /* Total render time */
+
     /* On first frame, ensure cursor is at home position */
     if (r->frame_number == 0) {
         printf("\033[H");
@@ -122,6 +125,7 @@ void renderer_render_frame(renderer_t *restrict r,
     if (r->frame_number > 0) {
         int diff_percentage = 0;
 
+        PROFILE_START(); /* Frame diff time */
 #if defined(__aarch64__) || defined(__ARM_NEON)
         /* Use NEON-accelerated diff detection */
         diff_percentage = framediff_percentage_neon(
@@ -144,6 +148,7 @@ void renderer_render_frame(renderer_t *restrict r,
         }
         diff_percentage = (int) ((diff_pixels * 100) / pixel_count);
 #endif
+        PROFILE_END("  Frame diff");
 
         /* Skip rendering if change is below threshold */
         if (diff_percentage < FRAME_SKIP_THRESHOLD) {
@@ -152,15 +157,18 @@ void renderer_render_frame(renderer_t *restrict r,
     }
 
     /* Encode RGB data to base64 */
+    PROFILE_START(); /* Base64 encoding time */
     size_t encoded_size =
         base64_encode_auto((const uint8_t *) rgb24_frame, bitmap_size,
                            (uint8_t *) r->encoded_buffer);
     r->encoded_buffer[encoded_size] = '\0';
+    PROFILE_END("  Base64 encode");
 
     /* Send Kitty Graphics Protocol escape sequence with base64 data */
     /* Using Kitty mode (required for Kitty terminal) */
     const size_t chunk_size = 4096;
 
+    PROFILE_START(); /* I/O transmission time */
     for (size_t encoded_offset = 0; encoded_offset < encoded_size;) {
         bool more_chunks = (encoded_offset + chunk_size) < encoded_size;
 
@@ -206,9 +214,11 @@ void renderer_render_frame(renderer_t *restrict r,
         printf("\r\n");
         fflush(stdout);
     }
+    PROFILE_END("  I/O transmission");
 
     /* Update previous frame buffer for next diff */
     memcpy(r->prev_frame, rgb24_frame, bitmap_size);
 
     r->frame_number++;
+    PROFILE_END("Total render time");
 }

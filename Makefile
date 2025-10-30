@@ -28,6 +28,11 @@ CC := cc
 CFLAGS := -std=gnu11 -Wall -Wextra -O2 -g -Isrc -MMD -MP
 LDLIBS := -lpthread
 
+# Optional profiling mode (enable with: make PROFILE=1)
+ifdef PROFILE
+    CFLAGS += -DENABLE_PROFILING
+endif
+
 # NEON-specific flags (enabled on ARM/ARM64)
 # The NEON implementation will only be active if __aarch64__ or __ARM_NEON is defined
 NEON_FLAGS :=
@@ -94,21 +99,33 @@ download-assets: $(DOOM1_WAD) $(PUREDOOM_HEADER)
 run: $(TARGET) $(DOOM1_WAD) check-wad-symlink
 	@$(TARGET)
 
+# Run with profiling enabled (use: make profile)
+.PHONY: profile
+profile: clean
+	@$(MAKE) PROFILE=1 all
+	$(VECHO) "\nProfiling enabled. Run './$(TARGET)' to see performance stats.\n"
+
 # Test targets
 .PHONY: check
-check: bench-base64 bench-framediff test-atomic-bitmap
-
-bench-base64: $(TEST_OUT)/bench-base64
-	$(VECHO) "Running base64 tests and benchmarks...\n"
+check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/bench-framediff $(TEST_OUT)/test-atomic-bitmap
+	@echo ""
+	@echo "========================================"
+	@echo "  Running Test Suite"
+	@echo "========================================"
+	@echo ""
 	@$(TEST_OUT)/bench-base64
-
-bench-framediff: $(TEST_OUT)/bench-framediff
-	$(VECHO) "Running frame differencing benchmark...\n"
+	@echo ""
 	@$(TEST_OUT)/bench-framediff
-
-test-atomic-bitmap: $(TEST_OUT)/test-atomic-bitmap
-	$(VECHO) "Running atomic bitmap concurrent test...\n"
+	@echo ""
 	@$(TEST_OUT)/test-atomic-bitmap
+	@echo ""
+	@chmod +x $(TEST_DIR)/perf-regression.sh
+	@$(TEST_DIR)/perf-regression.sh
+
+.PHONY: bench-zlib
+bench-zlib: $(TEST_OUT)/bench-zlib
+	$(VECHO) "Running zlib compression benchmark...\n"
+	@$(TEST_OUT)/bench-zlib
 
 # Build test binaries
 $(TEST_OUT)/bench-base64: $(TEST_DIR)/bench-base64.c src/base64.c | $(TEST_OUT)
@@ -122,6 +139,10 @@ $(TEST_OUT)/bench-framediff: $(TEST_DIR)/bench-framediff.c | $(TEST_OUT)
 $(TEST_OUT)/test-atomic-bitmap: $(TEST_DIR)/test-atomic-bitmap.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
+
+$(TEST_OUT)/bench-zlib: $(TEST_DIR)/bench-zlib.c | $(TEST_OUT)
+	$(VECHO) "  CC\t$@\n"
+	$(Q)$(CC) $(CFLAGS) -o $@ $< -lz
 
 $(TEST_OUT):
 	$(Q)mkdir -p $(TEST_OUT)
