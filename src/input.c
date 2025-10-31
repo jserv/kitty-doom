@@ -302,21 +302,25 @@ static void csi_key(input_t *restrict input, char ch, int parm1, int parm2)
 
     if (doom_key) {
         /* Differentiated key timing to handle terminal key repeat:
-         * - Arrow keys: 150ms (covers typical terminal repeat interval of
-         * 30-50ms)
+         * - Arrow keys: 80ms (balanced for menu responsiveness + smooth
+         * movement)
          * - Other keys: 50ms (stable for menu navigation)
          *
-         * Why 150ms for arrow keys?
-         * Terminal key repeat sends events every 30-50ms. If our delay is too
-         * short (e.g., 30ms), the key gets released before the next repeat
-         * event arrives, causing down -> up -> down -> up cycles. 150ms ensures
-         * the key stays pressed across multiple repeat events.
+         * Why 80ms for arrow keys?
+         * Terminal key repeat sends events every 30-50ms. 80ms covers ~2 repeat
+         * events, which is the minimum needed to maintain continuous key_down
+         * state while maximizing menu responsiveness. Field testing showed:
+         * - 150ms: Smooth movement, sluggish menus (original value)
+         * - 100ms: Good movement, moderate menu lag
+         * - 80ms: Fast menus, acceptable movement quality (optimal balance)
+         * - 50ms: Very responsive menus, but movement becomes jerky
          */
         int delay_ms = 50; /* default */
         if (doom_key == DOOM_KEY_UP_ARROW || doom_key == DOOM_KEY_DOWN_ARROW ||
             doom_key == DOOM_KEY_LEFT_ARROW ||
             doom_key == DOOM_KEY_RIGHT_ARROW) {
-            delay_ms = 150; /* long enough to cover terminal repeat intervals */
+            /* menu-first balance: fast selection, good movement */
+            delay_ms = 80;
         }
 
         /* Handle key repeat: only send key_down if not already held */
