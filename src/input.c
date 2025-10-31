@@ -28,6 +28,13 @@ typedef struct {
     struct timespec release_time;
 } pending_release_t;
 
+/* Mouse state tracking for relative movement */
+typedef struct {
+    int last_x, last_y; /* Last recorded X/Y coordinate (terminal cells) */
+    bool tracking;      /* Whether mouse tracking is active */
+    bool buttons[3];    /* Button states [left, middle, right] */
+} mouse_state_t;
+
 struct input {
     pthread_t thread;
     pthread_mutex_t query_mutex;
@@ -69,6 +76,9 @@ struct input {
     /* ESC key timeout tracking */
     struct timespec esc_time;
     bool esc_waiting;
+
+    /* Mouse tracking state */
+    mouse_state_t mouse;
 };
 
 static inline void for_each_modifier(int modifiers, void (*lambda)(int))
@@ -411,6 +421,126 @@ static void position_report(input_t *restrict input, int row, int col)
     pthread_mutex_unlock(&input->query_mutex);
 }
 
+/* Parse SGR 1006 mouse event: \033[<Cb;Cx;CyM or \033[<Cb;Cx;Cym
+ * Cb: button code + modifiers
+ * Cx, Cy: column and row (1-based)
+ * M: press, m: release
+ *
+ * Button codes (bits 0-1):
+ * 0 = left, 1 = middle, 2 = right, 3 = release
+ * Bit 5 (32): motion/drag flag
+ * Bit 6 (64): wheel event flag
+ * Bits 2-4: modifiers (shift=4, alt=8, ctrl=16)
+ *
+ * Thread safety: This function runs in input thread, calls PureDOOM API
+ * (doom_mouse_move, doom_key_down) which we assume is thread-safe for
+ * concurrent input events. Mouse state is owned by input thread only.
+ */
+static void parse_mouse_sgr(input_t *restrict input, char final_char)
+{
+#define MOUSE_SENSITIVITY 10 /* Adjust terminal cell movement to DOOM units */
+#define MAX_DELTA_CLAMP 100  /* Clamp delta to ±100 cells (prevent jumps) */
+
+    if (input->parm_count < 3)
+        return;
+
+    const int cb = input->parms[0]; /* Button code */
+    const int cx = input->parms[1]; /* Column (1-based) */
+    const int cy = input->parms[2]; /* Row (1-based) */
+
+    /* Decode button code bitfield */
+    const int button = cb & 3; /* Bits 0-1: button (0=left, 1=mid, 2=right) */
+    const bool is_motion = (cb & 32) != 0;     /* Bit 5: motion flag */
+    const bool is_wheel = (cb & 64) != 0;      /* Bit 6: wheel event flag */
+    const bool is_press = (final_char == 'M'); /* M=press, m=release */
+
+    /* Ignore wheel events (bit 6 set) - they use different button codes
+     * Wheel up = 64, Wheel down = 65
+     * Without this check, wheel events would be misinterpreted as left button
+     */
+    if (is_wheel)
+        return;
+
+    /* Initialize mouse tracking on first event */
+    if (!input->mouse.tracking) {
+        input->mouse.last_x = cx;
+        input->mouse.last_y = cy;
+        input->mouse.tracking = true;
+        return;
+    }
+
+    /* Calculate relative movement (delta) with clamping
+     * Clamping prevents huge deltas from terminal resize or coordinate jumps
+     */
+    int delta_x = cx - input->mouse.last_x;
+    int delta_y = cy - input->mouse.last_y;
+
+    /* Clamp deltas to prevent spurious jumps */
+    if (delta_x > MAX_DELTA_CLAMP)
+        delta_x = MAX_DELTA_CLAMP;
+    else if (delta_x < -MAX_DELTA_CLAMP)
+        delta_x = -MAX_DELTA_CLAMP;
+
+    if (delta_y > MAX_DELTA_CLAMP)
+        delta_y = MAX_DELTA_CLAMP;
+    else if (delta_y < -MAX_DELTA_CLAMP)
+        delta_y = -MAX_DELTA_CLAMP;
+
+    /* Apply sensitivity and update DOOM engine */
+    delta_x *= MOUSE_SENSITIVITY;
+    delta_y *= MOUSE_SENSITIVITY;
+
+    if (delta_x != 0 || delta_y != 0) {
+        doom_mouse_move(delta_x, delta_y);
+        input->mouse.last_x = cx;
+        input->mouse.last_y = cy;
+    }
+
+    /* Handle button events (exclude motion-only events)
+     * Note: Button holds use fixed 50ms delay. For continuous fire,
+     * user must click repeatedly. This matches other action keys.
+     */
+    if (!is_motion && button < 3) {
+        if (is_press && !input->mouse.buttons[button]) {
+            /* Button pressed */
+            input->mouse.buttons[button] = true;
+
+            /* Map buttons to DOOM keys:
+             * Left button -> Fire (Ctrl)
+             * Right button -> Use/Open door (Space)
+             * Middle button -> Run (Shift)
+             */
+            int doom_key = 0;
+            switch (button) {
+            case 0: /* Left button */
+                doom_key = DOOM_KEY_CTRL;
+                break;
+            case 2:             /* Right button */
+                doom_key = ' '; /* Use key (same as Space) */
+                break;
+            case 1:                        /* Middle button */
+                doom_key = DOOM_KEY_SHIFT; /* Run key */
+                break;
+            }
+
+            if (doom_key) {
+                doom_key_down(doom_key);
+                /* 50ms delay matches keyboard action keys
+                 * For continuous fire, user must click repeatedly
+                 */
+                sched_key_release(input, doom_key, 50);
+            }
+        } else if (!is_press && input->mouse.buttons[button]) {
+            /* Button released */
+            input->mouse.buttons[button] = false;
+            /* Key release is handled by sched_key_release() timer */
+        }
+    }
+
+#undef MAX_DELTA_CLAMP
+#undef MOUSE_SENSITIVITY
+}
+
 static void parse_char(input_t *restrict input, char ch)
 {
     if (ch == 3) {
@@ -448,14 +578,15 @@ static void parse_char(input_t *restrict input, char ch)
         ss3_key(input, ch);
         input->state = STATE_GROUND;
     } else if (input->state == STATE_CSI) {
-        if (ch >= '0' && ch <= '9') {
+        /* Handle prefix characters FIRST (before digits) */
+        if (ch == '?' || ch == '>' || ch == '<') {
+            input->parm_prefix = ch;
+        } else if (ch >= '0' && ch <= '9') {
             input->parm = input->parm * 10 + (ch - '0');
         } else if (ch == ';') {
             if (input->parm_count < MAX_PARMS)
                 input->parms[input->parm_count++] = input->parm;
             input->parm = 0;
-        } else if (ch == '?' || ch == '>') {
-            input->parm_prefix = ch;
         } else {
             if (input->parm_count < MAX_PARMS)
                 input->parms[input->parm_count++] = input->parm;
@@ -480,6 +611,10 @@ static void parse_char(input_t *restrict input, char ch)
                 /* Cursor position report */
                 if (input->parm_count >= 2)
                     position_report(input, input->parms[0], input->parms[1]);
+            } else if (ch == 'M' || ch == 'm') {
+                /* SGR 1006 mouse event (if prefix is '<') */
+                if (input->parm_prefix == '<')
+                    parse_mouse_sgr(input, ch);
             } else {
                 csi_key(input, ch, input->parm_count > 0 ? input->parms[0] : 0,
                         input->parm_count > 1 ? input->parms[1] : 0);
@@ -598,6 +733,14 @@ input_t *input_create(void)
     printf("\033[?25l");
     fflush(stdout);
 
+    /* Enable mouse tracking (SGR 1006 mode)
+     * - ?1000h: Enable mouse button press/release events
+     * - ?1003h: Enable "any event" tracking (includes motion)
+     * - ?1006h: Enable SGR extended format (no 222 col limit)
+     */
+    printf("\033[?1000h\033[?1003h\033[?1006h");
+    fflush(stdout);
+
     /* Start the keyboard thread */
     if (pthread_create(&input->thread, NULL, input_thread_func, input) != 0) {
         pthread_mutex_destroy(&input->release_mutex);
@@ -635,7 +778,8 @@ void input_destroy(input_t *input)
     pthread_join(input->thread, NULL);
 
     /* Restore terminal state */
-    printf("\033[?25h"); /*  Show cursor */
+    printf("\033[?1006l\033[?1003l\033[?1000l"); /* Disable mouse tracking */
+    printf("\033[?25h");                         /*  Show cursor */
     fflush(stdout);
 
     pthread_mutex_destroy(&input->query_mutex);

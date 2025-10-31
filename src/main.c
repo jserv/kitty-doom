@@ -129,6 +129,15 @@ static bool check_supported_term(void)
         }
     }
 
+    /* Drain any remaining input to prevent spurious output after exit
+     * Some terminals send multiple responses or delayed responses
+     */
+    while (poll(&pfd, 1, 10) > 0 && (pfd.revents & POLLIN)) {
+        char drain_buf[256];
+        if (read(STDIN_FILENO, drain_buf, sizeof(drain_buf)) <= 0)
+            break;
+    }
+
     /* Restore terminal state */
     tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
 

@@ -16,8 +16,20 @@ This guide covers the controls and gameplay features.
 | , (comma) | Strafe left |
 | . (period) | Strafe right |
 
-Note: Arrow keys use intelligent key repeat detection (150ms window) - when you hold down a key, it stays continuously pressed. 
+Note: Arrow keys use intelligent key repeat detection (80ms window) - when you hold down a key, it stays continuously pressed.
 This matches terminal key repeat behavior and provides smooth movement. Single taps work in menus - the first press moves one item, and the key automatically releases if you don't hold it down.
+
+### Mouse Controls
+
+| Action | Control |
+|--------|---------|
+| Look around | Move mouse |
+| Fire weapon | Left mouse button |
+| Use / Open doors | Right mouse button |
+| Run | Middle mouse button |
+
+Note: Mouse support uses the SGR 1006 extended mouse protocol. Mouse movement controls view rotation (look left/right/up/down).
+For continuous firing, click repeatedly - buttons use a 50ms release delay matching keyboard action keys.
 
 ### Actions
 
@@ -95,18 +107,30 @@ In multiplayer games, press the following keys to send messages to specific play
 ## Gameplay Tips
 
 1. Arrow keys automatically stay pressed when held - smooth continuous movement without lag.
-2. Use Space, F, or I keys to fire your weapon (easier than Ctrl in terminals).
-3. The game runs at 35 FPS (original DOOM timing).
-4. Press ESC to access the menu at any time.
-5. Press F11 to cycle through brightness levels if the game is too dark.
-6. The automap (Tab) shows your current position and the level layout.
-7. In menus, tap arrow keys to move selection - key repeat detection ensures single-item movement.
+2. Use mouse for aiming - move the mouse to rotate view, left-click to fire.
+3. Use Space, F, or I keys to fire your weapon (easier than Ctrl in terminals).
+4. The game runs at 35 FPS (original DOOM timing).
+5. Press ESC to access the menu at any time.
+6. Press F11 to cycle through brightness levels if the game is too dark.
+7. The automap (Tab) shows your current position and the level layout.
+8. In menus, tap arrow keys to move selection - key repeat detection ensures single-item movement.
+9. Mouse support requires Kitty terminal - other terminals may have issues.
 
 ### Terminal Compatibility
 
-- Kitty and Ghostty: Full support with all features
-- WezTerm: Works well, F/I keys recommended for firing
-- Other terminals: May have limited Kitty Graphics Protocol support
+**Kitty is the only fully supported terminal.**
+
+- **Kitty**: Full support with all features (keyboard + mouse)
+  * Best performance and complete Kitty Graphics Protocol implementation
+  * Recommended terminal for optimal gameplay experience
+  * Download: https://sw.kovidgoyal.net/kitty/
+
+- **Other terminals**: Limited or no support
+  * Ghostty, WezTerm: Partial Kitty Graphics Protocol support with known issues
+  * Most terminals lack proper protocol implementation
+  * May experience visual corruption, rendering issues, or missing features
+
+**Important**: This game requires the Kitty Graphics Protocol. Running in unsupported terminals will cause display problems. For the best experience, use Kitty terminal.
 
 ## Configuration
 
@@ -167,10 +191,10 @@ Place the IWAD file in the same directory as the executable or set the `DOOMWADD
 - VT sequence parsing (arrow keys, function keys)
 - Minimum terminal size: 80x24 cells (larger recommended for better experience)
 
-### Recommended Terminals
-- Kitty: Best performance, full protocol support
-- Ghostty: Excellent performance, full support
-- WezTerm: Good compatibility with Kitty Graphics Protocol
+### Supported Terminal
+- **Kitty only**: This is the only fully supported terminal
+  * Download: https://sw.kovidgoyal.net/kitty/
+  * Other terminals are not recommended and may not work correctly
 
 ### Display
 - True color (24-bit) support recommended
@@ -178,6 +202,7 @@ Place the IWAD file in the same directory as the executable or set the `DOOMWADD
 
 ## Troubleshooting
 
+- **Using the wrong terminal?** Kitty is the only supported terminal. Other terminals will have issues.
 - If the screen appears corrupted after exit, run `reset` in your terminal
 - If keys don't respond, ensure your terminal is in focus
-- For best performance, use a terminal with hardware-accelerated rendering
+- **Performance issues?** Make sure you're using Kitty with hardware-accelerated rendering enabled

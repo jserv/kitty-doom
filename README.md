@@ -10,6 +10,7 @@ Supported Terminals
 
 - Terminal graphics rendering via [Kitty Graphics Protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
 - Pure C99 implementation with POSIX threading
+- Mouse support via SGR 1006 protocol (view rotation + button actions)
 - Sound effects (SFX) via [miniaudio](https://miniaud.io/) + PureDOOM audio buffer
 - Lock-free atomic operations for input handling
 - SIMD-optimized base64 encoding (NEON/SSE3)
@@ -44,6 +45,12 @@ Supported Terminals
   * Prioritizes menu responsiveness over movement smoothness
   * Repeat detection prevents duplicate key events from terminal auto-repeat
   * Trade-off: Fast menu navigation, acceptable movement fluidity
+- Mouse support: SGR 1006 extended mouse protocol
+  * Relative movement tracking with 10x sensitivity multiplier
+  * Delta clamping (±100 cells) prevents coordinate jumps
+  * Button mapping: Left=Fire, Right=Use, Middle=Run
+  * Wheel events ignored (no action)
+  * Thread-safe integration with PureDOOM API
 - Fire key: F or I keys (Ctrl is difficult to capture in terminal environments)
 
 ### Engine
