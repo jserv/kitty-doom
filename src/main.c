@@ -107,22 +107,21 @@ static bool check_supported_term(void)
     printf("\033_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\033\\");
     fflush(stdout);
 
-    /* Wait for response with timeout (200ms) */
+    /* Wait for response with timeout (500ms) */
     struct pollfd pfd = {
         .fd = STDIN_FILENO,
         .events = POLLIN,
     };
 
     bool supported = false;
-    if (poll(&pfd, 1, 200) > 0 && (pfd.revents & POLLIN)) {
+    if (poll(&pfd, 1, 500) > 0 && (pfd.revents & POLLIN)) {
         char buf[256];
         ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
         if (n > 0) {
             buf[n] = '\0';
             /* Check for Kitty Graphics response */
-            if (strstr(buf, "\033_Gi=31")) {
+            if (strstr(buf, "\033_Gi=31") || strstr(buf, "_Gi=31")) {
                 supported = true;
-                fprintf(stderr, "Terminal supports Kitty Graphics Protocol\n");
             }
         }
     }
