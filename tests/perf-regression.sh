@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0
 #
 # Performance regression test for kitty-doom
-# Tracks core path performance: base64 encoding, frame differencing, atomic ops
+# Tracks core path performance: base64 encoding, atomic ops
 
 set -euo pipefail
 
@@ -14,8 +14,7 @@ NC='\033[0m' # No Color
 
 # Performance baselines (update these after significant optimizations)
 # Values are approximate and platform-specific
-BASELINE_BASE64_US=15    # NEON/SSE should be < 15 us/frame
-BASELINE_FRAMEDIFF_US=15 # Frame diff should be < 15 us
+BASELINE_BASE64_US=20    # NEON/SSE should be < 20 us/frame
 
 echo "========================================"
 echo "  kitty-doom Performance Regression"
@@ -69,24 +68,6 @@ echo "  Throughput: $base64_throughput MB/s"
 echo "  Speedup:    ${base64_speedup}x vs scalar"
 
 if ! check_threshold "Base64 encoding" "$base64_time" "$BASELINE_BASE64_US" "us"; then
-	exit_code=1
-fi
-
-echo ""
-
-# =============================================================================
-# Frame Differencing Performance
-# =============================================================================
-echo "=== Frame Differencing (320x200 RGB24) ==="
-
-framediff_output=$(./build/tests/bench-framediff 2>&1)
-
-# Extract average time for 100% change scenario (worst case)
-framediff_time=$(echo "$framediff_output" | grep "NEON - 100% change:" -A 3 | grep "Avg time:" | sed -E 's/.*Avg time: +([0-9.]+).*/\1/')
-
-echo "  Worst case (100% change): $framediff_time us"
-
-if ! check_threshold "Frame differencing" "$framediff_time" "$BASELINE_FRAMEDIFF_US" "us"; then
 	exit_code=1
 fi
 

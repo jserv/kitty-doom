@@ -107,15 +107,13 @@ profile: clean
 
 # Test targets
 .PHONY: check
-check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/bench-framediff $(TEST_OUT)/test-atomic-bitmap
+check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/test-atomic-bitmap
 	@echo ""
 	@echo "========================================"
 	@echo "  Running Test Suite"
 	@echo "========================================"
 	@echo ""
 	@$(TEST_OUT)/bench-base64
-	@echo ""
-	@$(TEST_OUT)/bench-framediff
 	@echo ""
 	@$(TEST_OUT)/test-atomic-bitmap
 	@echo ""
@@ -131,10 +129,6 @@ bench-zlib: $(TEST_OUT)/bench-zlib
 $(TEST_OUT)/bench-base64: $(TEST_DIR)/bench-base64.c src/base64.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) $(ARCH_FLAGS) -o $@ $^
-
-$(TEST_OUT)/bench-framediff: $(TEST_DIR)/bench-framediff.c | $(TEST_OUT)
-	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) $(CFLAGS) $(NEON_FLAGS) -o $@ $<
 
 $(TEST_OUT)/test-atomic-bitmap: $(TEST_DIR)/test-atomic-bitmap.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
