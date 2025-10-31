@@ -68,8 +68,8 @@ renderer_t *renderer_create(int screen_rows, int screen_cols)
     srand(time(NULL));
     r->kitty_id = rand();
 
-    /* Set the window title */
-    printf("\033]21;Kitty DOOM\033\\");
+    /* Set the window title (OSC 2: standard window title sequence) */
+    printf("\033]2;Kitty DOOM\033\\");
 
     /* Clear the screen and move cursor to home */
     printf("\033[2J\033[H");
@@ -94,8 +94,8 @@ void renderer_destroy(renderer_t *restrict r)
     printf("\033[H\033[2J");
     fflush(stdout);
 
-    /* Reset the window title */
-    printf("\033]21\033\\");
+    /* Reset the window title (OSC 2 with empty string) */
+    printf("\033]2;\033\\");
     fflush(stdout);
 
     /* Free allocated buffers */
