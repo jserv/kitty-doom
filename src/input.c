@@ -777,6 +777,28 @@ void input_destroy(input_t *input)
 
     pthread_join(input->thread, NULL);
 
+    /* Drain stdin to prevent spurious terminal responses from appearing
+     * after exit. This handles delayed responses from terminal probes
+     * (e.g., Kitty Graphics Protocol queries) that may arrive after the
+     * main program has finished.
+     */
+    struct termios tio;
+    if (tcgetattr(STDIN_FILENO, &tio) == 0) {
+        struct termios drain_tio = tio;
+        drain_tio.c_lflag &= ~(ICANON | ECHO);
+        drain_tio.c_cc[VMIN] = 0;
+        drain_tio.c_cc[VTIME] = 0;
+        tcsetattr(STDIN_FILENO, TCSANOW, &drain_tio);
+
+        /* Drain all pending input */
+        char drain_buf[256];
+        while (read(STDIN_FILENO, drain_buf, sizeof(drain_buf)) > 0)
+            ;
+
+        /* Restore original terminal state */
+        tcsetattr(STDIN_FILENO, TCSANOW, &tio);
+    }
+
     /* Restore terminal state */
     printf("\033[?1006l\033[?1003l\033[?1000l"); /* Disable mouse tracking */
     printf("\033[?25h");                         /*  Show cursor */
