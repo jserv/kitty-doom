@@ -92,8 +92,6 @@ make profile
 ./build/kitty-doom 2> profile.log
 ```
 
-See [PERFORMANCE_SUMMARY.md](PERFORMANCE_SUMMARY.md) for detailed performance analysis.
-
 ## Running the Game
 
 ```bash
