@@ -32,8 +32,10 @@ struct input {
     pthread_t thread;
     pthread_mutex_t query_mutex;
     pthread_cond_t query_condition;
+    pthread_cond_t ready_condition; /* For thread startup synchronization */
     atomic_bool exiting;
     atomic_bool exit_requested;
+    bool ready; /* Set when input thread is ready to receive queries */
 
     parser_state_t state;
     int parms[MAX_PARMS];
@@ -302,38 +304,85 @@ static void csi_key(input_t *restrict input, char ch, int parm1, int parm2)
 
     if (doom_key) {
         /* Differentiated key timing to handle terminal key repeat:
-         * - Arrow keys: 80ms (balanced for menu responsiveness + smooth
-         * movement)
+         * - Arrow keys: 35ms (prioritize menu responsiveness)
          * - Other keys: 50ms (stable for menu navigation)
          *
-         * Why 80ms for arrow keys?
-         * Terminal key repeat sends events every 30-50ms. 80ms covers ~2 repeat
-         * events, which is the minimum needed to maintain continuous key_down
-         * state while maximizing menu responsiveness. Field testing showed:
-         * - 150ms: Smooth movement, sluggish menus (original value)
-         * - 100ms: Good movement, moderate menu lag
-         * - 80ms: Fast menus, acceptable movement quality (optimal balance)
-         * - 50ms: Very responsive menus, but movement becomes jerky
+         * Why 35ms for arrow keys?
+         * Terminal key repeat sends events every 30-50ms. 35ms is just above
+         * the minimum repeat interval, providing:
+         * - Immediate menu response (minimal latency)
+         * - Acceptable movement smoothness in-game
+         * - Low-latency feel overall
+         *
+         * Trade-off: Movement may be slightly choppier than higher values,
+         * but menu navigation becomes highly responsive.
          */
         int delay_ms = 50; /* default */
         if (doom_key == DOOM_KEY_UP_ARROW || doom_key == DOOM_KEY_DOWN_ARROW ||
             doom_key == DOOM_KEY_LEFT_ARROW ||
             doom_key == DOOM_KEY_RIGHT_ARROW) {
-            /* menu-first balance: fast selection, good movement */
-            delay_ms = 80;
+            /* menu-first: prioritize responsiveness */
+            delay_ms = 35;
         }
 
-        /* Handle key repeat: only send key_down if not already held */
+        /* Handle key repeat: only send key_down if not already held.
+         * Exception: if key is held but release is scheduled far in the future
+         * (> 25ms), treat as a new distinct keypress for menu responsiveness.
+         *
+         * Why 25ms threshold?
+         * - Terminal repeat events: 30-50ms interval
+         * - Within 25ms: continuous key hold (extend release)
+         * - Beyond 25ms: distinct keypress (immediate response)
+         * - Balances smooth movement with responsive menus
+         */
         bool already_held = is_key_held(input, doom_key);
+        bool is_new_keypress = false;
 
-        if (!already_held) {
+        if (already_held) {
+            /* Check how long until scheduled release */
+            pthread_mutex_lock(&input->release_mutex);
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+
+            for (int i = 0; i < input->pending_count; i++) {
+                if (input->pending_releases[i].key == doom_key) {
+                    long time_to_release_ms =
+                        (input->pending_releases[i].release_time.tv_sec -
+                         now.tv_sec) *
+                            1000 +
+                        (input->pending_releases[i].release_time.tv_nsec -
+                         now.tv_nsec) /
+                            1000000;
+
+                    /* If > 25ms until release, treat as new distinct keypress
+                     */
+                    if (time_to_release_ms > 25) {
+                        /* Release old key immediately */
+                        doom_key_up(doom_key);
+                        mark_key_released(input, doom_key);
+
+                        /* Remove from pending releases */
+                        for (int j = i; j < input->pending_count - 1; j++)
+                            input->pending_releases[j] =
+                                input->pending_releases[j + 1];
+                        input->pending_count--;
+
+                        is_new_keypress = true;
+                    }
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&input->release_mutex);
+        }
+
+        if (!already_held || is_new_keypress) {
             for_each_modifier(parm2, key_down);
             doom_key_down(doom_key);
         }
 
         sched_key_release(input, doom_key, delay_ms);
 
-        if (!already_held)
+        if (!already_held || is_new_keypress)
             sched_modifier_releases(input, parm2, delay_ms);
     }
 }
@@ -445,6 +494,13 @@ static void parse_char(input_t *restrict input, char ch)
 static void *input_thread_func(void *arg)
 {
     input_t *input = (input_t *) arg;
+
+    /* Signal that the thread is ready to receive terminal responses */
+    pthread_mutex_lock(&input->query_mutex);
+    input->ready = true;
+    pthread_cond_signal(&input->ready_condition);
+    pthread_mutex_unlock(&input->query_mutex);
+
     while (!atomic_load_explicit(&input->exiting, memory_order_relaxed)) {
         /* Process any pending key releases first */
         process_pending_releases(input);
@@ -502,6 +558,7 @@ input_t *input_create(void)
         .state = STATE_GROUND,
         .exiting = false,
         .exit_requested = false,
+        .ready = false,
         .has_cell_size = false,
         .has_cursor_pos = false,
         .device_attributes = NULL,
@@ -523,7 +580,15 @@ input_t *input_create(void)
         return NULL;
     }
 
+    if (pthread_cond_init(&input->ready_condition, NULL) != 0) {
+        pthread_cond_destroy(&input->query_condition);
+        pthread_mutex_destroy(&input->query_mutex);
+        free(input);
+        return NULL;
+    }
+
     if (pthread_mutex_init(&input->release_mutex, NULL) != 0) {
+        pthread_cond_destroy(&input->ready_condition);
         pthread_cond_destroy(&input->query_condition);
         pthread_mutex_destroy(&input->query_mutex);
         free(input);
@@ -537,18 +602,21 @@ input_t *input_create(void)
     /* Start the keyboard thread */
     if (pthread_create(&input->thread, NULL, input_thread_func, input) != 0) {
         pthread_mutex_destroy(&input->release_mutex);
+        pthread_cond_destroy(&input->ready_condition);
         pthread_cond_destroy(&input->query_condition);
         pthread_mutex_destroy(&input->query_mutex);
         free(input);
         return NULL;
     }
 
-    /* Give the input thread time to start and be ready to receive responses.
+    /* Wait for the input thread to signal it's ready to receive responses.
      * This prevents timing issues where terminal queries are sent before the
      * input thread is ready to process responses.
      */
-    struct timespec ts = {.tv_sec = 0, .tv_nsec = 50000000}; /*  50ms */
-    nanosleep(&ts, NULL);
+    pthread_mutex_lock(&input->query_mutex);
+    while (!input->ready)
+        pthread_cond_wait(&input->ready_condition, &input->query_mutex);
+    pthread_mutex_unlock(&input->query_mutex);
 
     return input;
 }
@@ -573,6 +641,7 @@ void input_destroy(input_t *input)
 
     pthread_mutex_destroy(&input->query_mutex);
     pthread_cond_destroy(&input->query_condition);
+    pthread_cond_destroy(&input->ready_condition);
     pthread_mutex_destroy(&input->release_mutex);
 
     free(input->device_attributes);

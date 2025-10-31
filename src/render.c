@@ -26,7 +26,8 @@
 
 #define WIDTH 320
 #define HEIGHT 200
-#define FRAME_SKIP_THRESHOLD 5 /* Skip update if < 5% pixels changed */
+/* Disable frame skipping for immediate menu response */
+#define FRAME_SKIP_THRESHOLD 0
 
 struct renderer {
     int screen_rows, screen_cols;
