@@ -1,6 +1,6 @@
 # Kitty DOOM
 
-A pure C99 port of DOOM that renders directly in your terminal using the [Kitty Graphics Protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
+A pure C port of DOOM that renders directly in your terminal using the [Kitty Graphics Protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/).
 Play the legendary first-person shooter in terminals that support the protocol.
 
 Supported Terminals
@@ -9,7 +9,8 @@ Supported Terminals
 ## Features
 
 - Terminal graphics rendering via [Kitty Graphics Protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
-- Pure C11 implementation with POSIX threading
+- Pure C99 implementation with POSIX threading
+- Sound effects (SFX) via [miniaudio](https://miniaud.io/) + PureDOOM audio buffer
 - Lock-free atomic operations for input handling
 - SIMD-optimized base64 encoding (NEON/SSE3)
 - Standard VT input sequences for keyboard control

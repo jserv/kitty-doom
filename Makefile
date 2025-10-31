@@ -15,7 +15,7 @@ TEST_DIR := tests
 TEST_OUT := $(OUT)/tests
 
 # Source files
-SRCS := src/input.c src/main.c src/render.c src/base64.c
+SRCS := src/input.c src/main.c src/render.c src/base64.c src/sound.c
 
 # Object files (placed in build directory)
 OBJS := $(patsubst src/%.c,$(OUT)/%.o,$(SRCS))
@@ -80,7 +80,7 @@ PUREDOOM_CFLAGS := $(foreach flag,$(PUREDOOM_CFLAGS_TO_CHECK),$(call check_flag,
 
 # Default target
 .PHONY: all
-all: $(TARGET) $(DOOM1_WAD) check-wad-symlink
+all: $(TARGET) $(DOOM1_WAD) $(MINIAUDIO_HEADER) check-wad-symlink
 
 # Check and create doom1.wad symlink if needed (for case-sensitive filesystems)
 .PHONY: check-wad-symlink
@@ -90,9 +90,9 @@ check-wad-symlink: $(DOOM1_WAD)
 		ln -s $(DOOM1_WAD) doom1.wad; \
 	fi
 
-# Download game assets (DOOM1.WAD and PureDOOM.h)
+# Download game assets (DOOM1.WAD, PureDOOM.h, miniaudio.h)
 .PHONY: download-assets
-download-assets: $(DOOM1_WAD) $(PUREDOOM_HEADER)
+download-assets: $(DOOM1_WAD) $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER)
 
 # Run the game
 .PHONY: run
@@ -146,8 +146,8 @@ $(TARGET): $(OBJS) | $(OUT)
 	$(VECHO) "  LD\t$@\n"
 	$(Q)$(CC) -o $@ $^ $(LDLIBS)
 
-# Compile source files (depends on PureDOOM.h)
-$(OUT)/%.o: src/%.c $(PUREDOOM_HEADER) | $(OUT)
+# Compile source files (depends on PureDOOM.h and miniaudio.h)
+$(OUT)/%.o: src/%.c $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER) | $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -161,6 +161,12 @@ $(OUT)/main.o: src/main.c $(PUREDOOM_HEADER) | $(OUT)
 $(OUT)/base64.o: src/base64.c | $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) $(ARCH_FLAGS) -c -o $@ $<
+
+# Special rule for sound.c with miniaudio.h dependency and relaxed warnings
+# miniaudio.h is a large single-header library that may trigger some warnings
+$(OUT)/sound.o: src/sound.c $(MINIAUDIO_HEADER) | $(OUT)
+	$(VECHO) "  CC\t$@\n"
+	$(Q)$(CC) $(CFLAGS) -Wno-unused-function -c -o $@ $<
 
 # Create build directory
 $(OUT):

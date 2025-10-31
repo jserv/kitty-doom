@@ -25,6 +25,9 @@
 
 static const char *last_print_string = NULL;
 
+/* Global sound system (NULL if sound disabled via -nosound) */
+static sound_system_t *global_sound = NULL;
+
 /* Signal handling for graceful shutdown
  * IMPORTANT: Only sig_atomic_t access is allowed in signal handlers.
  * The handler sets a flag, and shutdown is handled in the main thread.
@@ -176,15 +179,37 @@ int main(int argc, char **argv)
     if (!check_supported_term())
         return EXIT_FAILURE;
 
+    /* Check for -nosound flag */
+    bool sound_enabled = true;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-nosound")) {
+            sound_enabled = false;
+            break;
+        }
+    }
+
+    /* Initialize sound system (optional) */
+    if (sound_enabled) {
+        global_sound = sound_init();
+        if (!global_sound)
+            fprintf(stderr,
+                    "Warning: Sound initialization failed, continuing without "
+                    "sound\n");
+    }
+
     os_t *os = os_create();
     if (!os) {
         fprintf(stderr, "Failed to initialize OS layer\n");
+        if (global_sound)
+            sound_shutdown(global_sound);
         return EXIT_FAILURE;
     }
 
     input_t *input = input_create();
     if (!input) {
         fprintf(stderr, "Failed to initialize input\n");
+        if (global_sound)
+            sound_shutdown(global_sound);
         os_destroy(os);
         return EXIT_FAILURE;
     }
@@ -199,6 +224,8 @@ int main(int argc, char **argv)
             printf("%s\n", last_print_string);
         input_destroy(input);
         os_destroy(os);
+        if (global_sound)
+            sound_shutdown(global_sound);
         return exit_code_global == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
@@ -208,12 +235,20 @@ int main(int argc, char **argv)
         fprintf(stderr, "Failed to initialize renderer\n");
         input_destroy(input);
         os_destroy(os);
+        if (global_sound)
+            sound_shutdown(global_sound);
         return EXIT_FAILURE;
     }
 
     /* Main game loop */
     while (input_is_running(input) && !exit_requested && !signal_received) {
+        /* Lock audio before doom_update() to prevent race conditions.
+         * doom_update() internally calls doom_get_sound_buffer() for audio
+         * mixing which must be synchronized with the audio callback thread
+         */
+        sound_lock(global_sound);
         doom_update();
+        sound_unlock(global_sound);
 
         /* RGB24 format is obtained directly from PureDOOM */
         const unsigned char *frame = doom_get_framebuffer(3);
@@ -230,6 +265,10 @@ int main(int argc, char **argv)
     renderer_destroy(r);
     input_destroy(input);
     os_destroy(os);
+
+    /* Shutdown sound system */
+    if (global_sound)
+        sound_shutdown(global_sound);
 
     if (exit_requested && last_print_string)
         printf("%s\n", last_print_string);

@@ -35,6 +35,21 @@ void renderer_destroy(renderer_t *restrict r);
 void renderer_render_frame(renderer_t *restrict r,
                            const unsigned char *restrict rgb24_frame);
 
+/* Sound subsystem (optional, can be NULL if disabled) */
+typedef struct sound_system sound_system_t;
+
+sound_system_t *sound_init(void);
+void sound_shutdown(sound_system_t *sound);
+void sound_lock(sound_system_t *sound);
+void sound_unlock(sound_system_t *sound);
+bool sound_play_sfx(sound_system_t *sound, const char *sfx_name);
+bool sound_play_music(sound_system_t *sound,
+                      const char *music_name,
+                      bool looping);
+void sound_stop_music(sound_system_t *sound);
+void sound_set_music_volume(sound_system_t *sound, float volume);
+bool sound_is_music_playing(sound_system_t *sound);
+
 /* Operating System Abstraction Layer */
 #include <poll.h>
 #include <signal.h>

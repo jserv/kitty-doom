@@ -43,8 +43,16 @@ $(PUREDOOM_HEADER):
 	$(VECHO) "  GET\t$@\n"
 	$(Q)$(DOWNLOAD_CMD) $@ $(PUREDOOM_URL)
 
+# miniaudio.h download rule (single-header audio library)
+MINIAUDIO_URL = https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h
+MINIAUDIO_HEADER = src/miniaudio.h
+
+$(MINIAUDIO_HEADER):
+	$(VECHO) "  GET\t$@\n"
+	$(Q)$(DOWNLOAD_CMD) $@ $(MINIAUDIO_URL)
+
 # Clean external files
 .PHONY: clean-external
 clean-external:
 	$(VECHO) "  CLEAN\t\texternal files\n"
-	$(Q)rm -f $(DOOM1_WAD) doom1.wad $(PUREDOOM_HEADER)
+	$(Q)rm -f $(DOOM1_WAD) doom1.wad $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER)
