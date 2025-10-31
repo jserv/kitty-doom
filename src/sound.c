@@ -19,12 +19,12 @@
 
 #include "kitty-doom.h"
 
-/* miniaudio single-header library */
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
 /* PureDOOM audio buffer API */
 extern short *doom_get_sound_buffer(void);
+
 #define DOOM_SAMPLERATE 11025
 
 /* Sound system state */
@@ -37,10 +37,10 @@ struct sound_system {
 /* miniaudio callback - reads from PureDOOM's audio buffer
  * This runs in a separate thread managed by miniaudio
  *
- * CRITICAL FIX (2025-11-01): PureDOOM's doom_get_sound_buffer() returns a
- * fixed 512-frame buffer (2048 bytes = 512 frames × 2 channels × 2 bytes).
- * We configure periodSizeInFrames=512 to match, but add safety checks for
- * edge cases where the device might request different sizes.
+ * PureDOOM's doom_get_sound_buffer() returns a fixed 512-frame buffer
+ * (2048 bytes = 512 frames × 2 channels × 2 bytes).
+ * We configure periodSizeInFrames=512 to match, but add safety checks for edge
+ * cases where the device might request different sizes.
  */
 static void audio_callback(ma_device *device,
                            void *output,
