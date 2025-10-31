@@ -36,9 +36,9 @@ void renderer_render_frame(renderer_t *restrict r,
                            const unsigned char *restrict rgb24_frame);
 
 /* Operating System Abstraction Layer */
+#include <poll.h>
 #include <signal.h>
 #include <stdlib.h>
-#include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -88,18 +88,14 @@ static inline int os_getch(void)
 
 static inline int os_getch_timeout(int timeout_ms)
 {
-    fd_set readfds;
-    struct timeval tv;
+    struct pollfd pfd = {
+        .fd = STDIN_FILENO,
+        .events = POLLIN,
+    };
 
-    FD_ZERO(&readfds);
-    FD_SET(STDIN_FILENO, &readfds);
+    int result = poll(&pfd, 1, timeout_ms);
 
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-    int result = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &tv);
-
-    if (result > 0) {
+    if (result > 0 && (pfd.revents & POLLIN)) {
         /* Data available */
         unsigned char ch;
         ssize_t read_result = read(STDIN_FILENO, &ch, 1);
