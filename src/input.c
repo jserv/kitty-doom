@@ -304,25 +304,24 @@ static void csi_key(input_t *restrict input, char ch, int parm1, int parm2)
 
     if (doom_key) {
         /* Differentiated key timing to handle terminal key repeat:
-         * - Arrow keys: 35ms (prioritize menu responsiveness)
+         * - Arrow keys: 80ms (balanced: good movement + fast menu response)
          * - Other keys: 50ms (stable for menu navigation)
          *
-         * Why 35ms for arrow keys?
-         * Terminal key repeat sends events every 30-50ms. 35ms is just above
-         * the minimum repeat interval, providing:
-         * - Immediate menu response (minimal latency)
-         * - Acceptable movement smoothness in-game
-         * - Low-latency feel overall
+         * Why 80ms for arrow keys?
+         * Terminal key repeat sends events every 30-50ms. After testing:
+         * - 35ms: Menu extremely responsive, movement choppy (not smooth)
+         * - 80ms: Menu fast, movement smooth (best balance)
+         * - 100ms+: Menu sluggish, movement very smooth
          *
-         * Trade-off: Movement may be slightly choppier than higher values,
-         * but menu navigation becomes highly responsive.
+         * 80ms provides the best balance between smooth in-game movement
+         * and fast menu navigation, verified through testing.
          */
         int delay_ms = 50; /* default */
         if (doom_key == DOOM_KEY_UP_ARROW || doom_key == DOOM_KEY_DOWN_ARROW ||
             doom_key == DOOM_KEY_LEFT_ARROW ||
             doom_key == DOOM_KEY_RIGHT_ARROW) {
-            /* menu-first: prioritize responsiveness */
-            delay_ms = 35;
+            /* Balanced: smooth movement + fast menu */
+            delay_ms = 80;
         }
 
         /* Handle key repeat: only send key_down if not already held.
