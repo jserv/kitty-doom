@@ -90,7 +90,10 @@ static inline void os_destroy(os_t *os)
     if (!os)
         return;
 
-    tcsetattr(STDIN_FILENO, TCSANOW, &os->term_attributes);
+    /* Best-effort terminal restoration - failure is non-fatal */
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &os->term_attributes) != 0)
+        perror("Warning: Failed to restore terminal settings");
+
     free(os);
 }
 
