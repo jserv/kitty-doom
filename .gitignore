@@ -1,4 +1,5 @@
 build/
 src/PureDOOM.h
+src/miniaudio.h
 DOOM1.WAD
 *.wad
