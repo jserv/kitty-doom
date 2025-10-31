@@ -26,7 +26,7 @@ DEPS := $(OBJS:.o=.d)
 # Compiler and flags
 CC := cc
 CFLAGS := -std=gnu11 -Wall -Wextra -O2 -g -Isrc -MMD -MP
-LDLIBS := -lpthread
+LDFLAGS := -lpthread -lm
 
 # Optional profiling mode (enable with: make PROFILE=1)
 ifdef PROFILE
@@ -132,7 +132,7 @@ $(TEST_OUT)/bench-base64: $(TEST_DIR)/bench-base64.c src/base64.c | $(TEST_OUT)
 
 $(TEST_OUT)/test-atomic-bitmap: $(TEST_DIR)/test-atomic-bitmap.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) $(CFLAGS) -o $@ $< $(LDLIBS)
+	$(Q)$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 $(TEST_OUT)/bench-zlib: $(TEST_DIR)/bench-zlib.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
@@ -144,7 +144,7 @@ $(TEST_OUT):
 # Link binary
 $(TARGET): $(OBJS) | $(OUT)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(CC) -o $@ $^ $(LDLIBS)
+	$(Q)$(CC) -o $@ $^ $(LDFLAGS)
 
 # Compile source files (depends on PureDOOM.h and miniaudio.h)
 $(OUT)/%.o: src/%.c $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER) | $(OUT)
