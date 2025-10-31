@@ -34,7 +34,9 @@ struct renderer {
     long kitty_id;
     int frame_number;
     size_t encoded_buffer_size;
-    uint8_t *prev_frame; /* Previous frame for diff detection */
+    uint8_t *prev_frame;   /* Previous frame for diff detection */
+    char *protocol_buffer; /* Buffer for batching Kitty protocol sequences */
+    size_t protocol_buffer_size;
     char encoded_buffer[];
 };
 
@@ -56,13 +58,26 @@ renderer_t *renderer_create(int screen_rows, int screen_cols)
     }
     memset(r->prev_frame, 0, bitmap_size);
 
+    /* Allocate protocol buffer for batching I/O
+     * Size: max 64 chunks * (80 bytes header + 4096 data + 2 trailer) ~= 270 KB
+     */
+    const size_t protocol_buffer_size = 280 * 1024; /* 280 KB, rounded up */
+    r->protocol_buffer = malloc(protocol_buffer_size);
+    if (!r->protocol_buffer) {
+        free(r->prev_frame);
+        free(r);
+        return NULL;
+    }
+
     *r = (renderer_t) {
         .screen_rows = screen_rows,
         .screen_cols = screen_cols,
         .frame_number = 0,
         .encoded_buffer_size = encoded_buffer_size,
-        .kitty_id = 0,               /* Will be set below */
-        .prev_frame = r->prev_frame, /* Already allocated above */
+        .kitty_id = 0,                         /* Will be set below */
+        .prev_frame = r->prev_frame,           /* Already allocated above */
+        .protocol_buffer = r->protocol_buffer, /* Already allocated above */
+        .protocol_buffer_size = protocol_buffer_size,
     };
 
     /* Generate random image ID for Kitty protocol */
@@ -100,6 +115,7 @@ void renderer_destroy(renderer_t *restrict r)
     fflush(stdout);
 
     /* Free allocated buffers */
+    free(r->protocol_buffer);
     free(r->prev_frame);
     free(r);
 }
@@ -166,55 +182,132 @@ void renderer_render_frame(renderer_t *restrict r,
     PROFILE_END("  Base64 encode");
 
     /* Send Kitty Graphics Protocol escape sequence with base64 data */
-    /* Using Kitty mode (required for Kitty terminal) */
+    /* Batch all chunks into protocol_buffer for single fwrite() */
     const size_t chunk_size = 4096;
+    char *buf = r->protocol_buffer;
+    size_t buf_offset = 0;
 
     PROFILE_START(); /* I/O transmission time */
     for (size_t encoded_offset = 0; encoded_offset < encoded_size;) {
         bool more_chunks = (encoded_offset + chunk_size) < encoded_size;
+        const size_t this_size =
+            more_chunks ? chunk_size : encoded_size - encoded_offset;
+
+        /* Build header */
+        int header_len;
+        size_t rem = r->protocol_buffer_size - buf_offset;
 
         if (encoded_offset == 0) {
             /* First chunk includes all image metadata */
             if (r->frame_number == 0) {
                 /* First frame: create new image */
-                printf("\033_Ga=T,i=%ld,f=24,s=%d,v=%d,q=2,c=%d,r=%d,m=%d;",
-                       r->kitty_id, WIDTH, HEIGHT, r->screen_cols,
-                       r->screen_rows, more_chunks ? 1 : 0);
+                header_len = snprintf(
+                    buf + buf_offset, rem,
+                    "\033_Ga=T,i=%ld,f=24,s=%d,v=%d,q=2,c=%d,r=%d,m=%d;",
+                    r->kitty_id, WIDTH, HEIGHT, r->screen_cols, r->screen_rows,
+                    more_chunks ? 1 : 0);
             } else {
                 /* Subsequent frames: frame action */
-                printf("\033_Ga=f,r=1,i=%ld,f=24,x=0,y=0,s=%d,v=%d,m=%d;",
-                       r->kitty_id, WIDTH, HEIGHT, more_chunks ? 1 : 0);
+                header_len =
+                    snprintf(buf + buf_offset, rem,
+                             "\033_Ga=f,r=1,i=%ld,f=24,x=0,y=0,s=%d,v=%d,m=%d;",
+                             r->kitty_id, WIDTH, HEIGHT, more_chunks ? 1 : 0);
             }
         } else {
             /* Continuation chunks */
             if (r->frame_number == 0) {
-                printf("\033_Gm=%d;", more_chunks ? 1 : 0);
+                header_len = snprintf(buf + buf_offset, rem, "\033_Gm=%d;",
+                                      more_chunks ? 1 : 0);
             } else {
-                printf("\033_Ga=f,r=1,m=%d;", more_chunks ? 1 : 0);
+                header_len =
+                    snprintf(buf + buf_offset, rem, "\033_Ga=f,r=1,m=%d;",
+                             more_chunks ? 1 : 0);
             }
         }
 
-        /* Transfer payload */
-        const size_t this_size =
-            more_chunks ? chunk_size : encoded_size - encoded_offset;
-        fwrite(r->encoded_buffer + encoded_offset, 1, this_size, stdout);
-        printf("\033\\");
-        fflush(stdout);
+        /* Validate snprintf return value (GPT-5 + Claude recommendation) */
+        if (header_len < 0) {
+            fprintf(stderr,
+                    "ERROR: snprintf encoding failed (frame %d, offset %zu)\n",
+                    r->frame_number, encoded_offset);
+            return; /* Skip frame to prevent corruption */
+        }
+        if ((size_t) header_len >= rem) {
+            fprintf(stderr,
+                    "ERROR: Protocol buffer overflow - header needs %d bytes, "
+                    "only %zu available\n",
+                    header_len, rem);
+            return; /* Skip frame */
+        }
+        buf_offset += (size_t) header_len;
+
+        /* Validate payload size before memcpy */
+        if (buf_offset + this_size > r->protocol_buffer_size) {
+            fprintf(
+                stderr,
+                "ERROR: Payload overflow - need %zu bytes, buffer size %zu\n",
+                buf_offset + this_size, r->protocol_buffer_size);
+            return;
+        }
+
+        /* Copy payload */
+        memcpy(buf + buf_offset, r->encoded_buffer + encoded_offset, this_size);
+        buf_offset += this_size;
+
+        /* Validate trailer size before memcpy */
+        if (buf_offset + 2 > r->protocol_buffer_size) {
+            fprintf(stderr, "ERROR: Trailer overflow\n");
+            return;
+        }
+
+        /* Copy trailer */
+        memcpy(buf + buf_offset, "\033\\", 2);
+        buf_offset += 2;
 
         encoded_offset += this_size;
     }
 
     /* For Kitty mode, animate the frame after first frame */
     if (r->frame_number > 0) {
-        printf("\033_Ga=a,c=1,i=%ld;\033\\", r->kitty_id);
-        fflush(stdout);
+        size_t rem = r->protocol_buffer_size - buf_offset;
+        int anim_len = snprintf(buf + buf_offset, rem,
+                                "\033_Ga=a,c=1,i=%ld;\033\\", r->kitty_id);
+
+        /* Validate animation command snprintf */
+        if (anim_len < 0) {
+            fprintf(stderr, "ERROR: Animation snprintf failed\n");
+            return;
+        }
+        if ((size_t) anim_len >= rem) {
+            fprintf(stderr,
+                    "ERROR: Animation command overflow - need %d bytes, have "
+                    "%zu\n",
+                    anim_len, rem);
+            return;
+        }
+        buf_offset += (size_t) anim_len;
     }
 
     /* On first frame, add newline to move cursor below image */
     if (r->frame_number == 0) {
-        printf("\r\n");
-        fflush(stdout);
+        if (buf_offset + 2 > r->protocol_buffer_size) {
+            fprintf(stderr, "ERROR: Newline overflow\n");
+            return;
+        }
+        memcpy(buf + buf_offset, "\r\n", 2);
+        buf_offset += 2;
     }
+
+    /* Single batched write */
+    size_t written = fwrite(buf, 1, buf_offset, stdout);
+    if (written != buf_offset) {
+        fprintf(stderr,
+                "WARNING: Short write - expected %zu bytes, wrote %zu\n",
+                buf_offset, written);
+    }
+    if (fflush(stdout) != 0)
+        fprintf(stderr, "WARNING: fflush failed\n");
+
     PROFILE_END("  I/O transmission");
 
     /* Update previous frame buffer for next diff */
