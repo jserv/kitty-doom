@@ -39,9 +39,15 @@ renderer_t *renderer_create(int screen_rows, int screen_cols)
         return NULL;
 
     /* Allocate protocol buffer for batching I/O
-     * Size: max 64 chunks * (80 bytes header + 4096 data + 2 trailer) ~= 270 KB
+     * Calculate based on actual encoded size and chunk size
+     * Each chunk: header (~80 bytes) + data (4096 bytes) + trailer (2 bytes)
+     * Add 10% safety margin for headers/trailers
      */
-    const size_t protocol_buffer_size = 280 * 1024; /* 280 KB, rounded up */
+    const size_t chunk_size = 4096;
+    const size_t num_chunks =
+        (encoded_buffer_size + chunk_size - 1) / chunk_size;
+    /* +100 per chunk for header/trailer, +1K for animation commands */
+    const size_t protocol_buffer_size = num_chunks * (chunk_size + 100) + 1024;
     r->protocol_buffer = malloc(protocol_buffer_size);
     if (!r->protocol_buffer) {
         free(r);
