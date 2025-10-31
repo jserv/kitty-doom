@@ -4,6 +4,7 @@
  * "LICENSE" for information on usage and redistribution of this file.
  */
 
+#include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
@@ -778,9 +779,9 @@ void input_destroy(input_t *input)
     pthread_join(input->thread, NULL);
 
     /* Drain stdin to prevent spurious terminal responses from appearing
-     * after exit. This handles delayed responses from terminal probes
-     * (e.g., Kitty Graphics Protocol queries) that may arrive after the
-     * main program has finished.
+     * after exit. Terminal probe responses (e.g., Kitty Graphics Protocol)
+     * can arrive with significant delays (100-500ms). We use multiple drain
+     * rounds with timeouts to catch delayed responses.
      */
     struct termios tio;
     if (tcgetattr(STDIN_FILENO, &tio) == 0) {
@@ -790,10 +791,22 @@ void input_destroy(input_t *input)
         drain_tio.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSANOW, &drain_tio);
 
-        /* Drain all pending input */
-        char drain_buf[256];
-        while (read(STDIN_FILENO, drain_buf, sizeof(drain_buf)) > 0)
-            ;
+        /* Multi-round drain with exponential backoff
+         * Some terminals send responses with unpredictable delays.
+         * We drain multiple times with increasing timeouts to catch them all.
+         */
+        struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN};
+        int drain_timeouts[] = {10, 50, 100, 200}; /* ms */
+
+        for (size_t i = 0;
+             i < sizeof(drain_timeouts) / sizeof(drain_timeouts[0]); i++) {
+            while (poll(&pfd, 1, drain_timeouts[i]) > 0 &&
+                   (pfd.revents & POLLIN)) {
+                char drain_buf[256];
+                if (read(STDIN_FILENO, drain_buf, sizeof(drain_buf)) <= 0)
+                    break;
+            }
+        }
 
         /* Restore original terminal state */
         tcsetattr(STDIN_FILENO, TCSANOW, &tio);

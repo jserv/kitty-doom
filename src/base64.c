@@ -5,6 +5,7 @@
 
 #include "base64.h"
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -112,38 +113,44 @@ static bool cpu_has_ssse3(void)
 }
 #endif /* __x86_64__ || _M_X64 || __i386__ || _M_IX86 */
 
-/* Runtime selection of best implementation */
-static base64_encode_func_t select_best_impl(void)
-{
-    static bool initialized = false;
-    static base64_encode_func_t best_impl = NULL;
+/* Runtime selection of best implementation
+ *
+ * Thread-safe initialization using POSIX pthread_once().
+ * Guarantees that CPU feature detection runs exactly once,
+ * even with concurrent calls from multiple threads.
+ */
+static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+static base64_encode_func_t best_impl = NULL;
 
-    if (!initialized) {
-        /* Priority: NEON > SSE/SSSE3 > Scalar */
-        if (cpu_has_neon()) {
+static void initialize_best_impl(void)
+{
+    /* Priority: NEON > SSE/SSSE3 > Scalar */
+    if (cpu_has_neon()) {
 #if defined(__aarch64__) || defined(__ARM_NEON)
-            /* Use NEON SIMD implementation (simdutf algorithm) */
-            best_impl = base64_encode_neon;
+        /* Use NEON SIMD implementation (simdutf algorithm) */
+        best_impl = base64_encode_neon;
 #else
-            /* NEON not available, fallback to scalar */
-            best_impl = base64_encode_scalar;
+        /* NEON not available, fallback to scalar */
+        best_impl = base64_encode_scalar;
 #endif
-        } else if (cpu_has_ssse3()) {
+    } else if (cpu_has_ssse3()) {
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || \
     defined(_M_IX86)
-            /* Use SSE/SSSE3 SIMD implementation */
-            best_impl = base64_encode_sse;
+        /* Use SSE/SSSE3 SIMD implementation */
+        best_impl = base64_encode_sse;
 #else
-            /* SSE not available, fallback to scalar */
-            best_impl = base64_encode_scalar;
+        /* SSE not available, fallback to scalar */
+        best_impl = base64_encode_scalar;
 #endif
-        } else {
-            /* Fallback to basic scalar */
-            best_impl = base64_encode_scalar;
-        }
-        initialized = true;
+    } else {
+        /* Fallback to basic scalar */
+        best_impl = base64_encode_scalar;
     }
+}
 
+static base64_encode_func_t select_best_impl(void)
+{
+    pthread_once(&init_once, initialize_best_impl);
     return best_impl;
 }
 
