@@ -183,5 +183,13 @@ clean:
 distclean: clean
 	$(Q)$(MAKE) -s clean-external
 
+# Format source code with clang-format
+.PHONY: indent
+indent:
+	$(VECHO) "  FORMAT\tC/C++ files\n"
+	@git ls-files '*.c' '*.h' '*.cpp' '*.hpp' '*.cc' '*.hh' | \
+		grep -v 'PureDOOM.h' | grep -v 'miniaudio.h' | \
+		xargs clang-format -i -style=file
+
 # Include dependency files
 -include $(DEPS)
