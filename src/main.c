@@ -157,7 +157,6 @@ fallback_warning:
         "\n"
         "Recommended terminals:\n"
         "  - Kitty:   https://sw.kovidgoyal.net/kitty/\n"
-        "  - Ghostty: https://ghostty.org\n"
         "\n"
         "Running in unsupported terminals will cause display corruption.\n"
         "\n",
