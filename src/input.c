@@ -105,6 +105,7 @@ static inline void mark_key_held(input_t *restrict input, int key)
 {
     if (key < 0 || key >= MAX_KEY_CODE)
         return;
+
     const int word = key / 64;
     const int bit = key % 64;
     atomic_fetch_or_explicit(&input->held_keys_bitmap[word], 1ULL << bit,

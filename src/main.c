@@ -58,7 +58,7 @@ static void exit_handler(int exit_code)
     exit_requested = true;
 
     /* If an error occurred (exit_code != 0), print the last message from
-     * DOOM. The main loop will see the `exit_requested` flag and terminate
+     * DOOM. The main loop will see the 'exit_requested' flag and terminate
      * gracefully, ensuring cleanup is performed.
      */
     if (exit_code != 0 && last_print_string) {
@@ -79,6 +79,7 @@ static bool check_supported_term(void)
     if (term && strstr(term, "kitty"))
         return true; /* Kitty sets TERM=xterm-kitty */
 
+    /* TODO: Support Ghostty/WezTerm */
     if (term_program) {
         if (!strcmp(term_program, "ghostty") ||
             !strcmp(term_program, "WezTerm"))
@@ -123,9 +124,8 @@ static bool check_supported_term(void)
         if (n > 0) {
             buf[n] = '\0';
             /* Check for Kitty Graphics response */
-            if (strstr(buf, "\033_Gi=31") || strstr(buf, "_Gi=31")) {
+            if (strstr(buf, "\033_Gi=31") || strstr(buf, "_Gi=31"))
                 supported = true;
-            }
         }
     }
 
@@ -169,8 +169,7 @@ fallback_warning:
 int main(int argc, char **argv)
 {
     /* Signal handlers are installed for graceful shutdown */
-    struct sigaction sa;
-    sa.sa_handler = signal_handler;
+    struct sigaction sa = {.sa_handler = signal_handler};
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
 
@@ -200,9 +199,7 @@ int main(int argc, char **argv)
     if (sound_enabled) {
         global_sound = sound_init();
         if (!global_sound)
-            fprintf(stderr,
-                    "Warning: Sound initialization failed, continuing without "
-                    "sound\n");
+            fprintf(stderr, "Warning: Sound initialization failed\n");
     }
 
     os_t *os = os_create();
