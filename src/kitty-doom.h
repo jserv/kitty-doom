@@ -9,6 +9,16 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* Kitty Graphics Protocol constants */
+#define KITTY_CHUNK_SIZE 4096        /* Max base64 data per chunk */
+#define KITTY_TRAILER_SIZE 2         /* "\033\\" escape sequence */
+#define KITTY_CHUNK_OVERHEAD 100     /* Header + trailer per chunk */
+#define KITTY_ANIM_BUFFER_SIZE 1024  /* Animation command buffer */
+
+/* Terminal I/O constants */
+#define TERMINAL_RESPONSE_BUFFER_SIZE 256  /* VT sequence response buffer */
+#define TERMINAL_DRAIN_BUFFER_SIZE 256     /* stdin drain buffer */
+
 /* Common types */
 typedef struct {
     int first;

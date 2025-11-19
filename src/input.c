@@ -797,13 +797,13 @@ void input_destroy(input_t *input)
          * We drain multiple times with increasing timeouts to catch them all.
          */
         struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN};
-        int drain_timeouts[] = {10, 50, 100, 200}; /* ms */
+        static const int drain_timeouts[] = {10, 50, 100, 200}; /* ms */
 
         for (size_t i = 0;
              i < sizeof(drain_timeouts) / sizeof(drain_timeouts[0]); i++) {
             while (poll(&pfd, 1, drain_timeouts[i]) > 0 &&
                    (pfd.revents & POLLIN)) {
-                char drain_buf[256];
+                char drain_buf[TERMINAL_DRAIN_BUFFER_SIZE];
                 if (read(STDIN_FILENO, drain_buf, sizeof(drain_buf)) <= 0)
                     break;
             }

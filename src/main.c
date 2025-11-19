@@ -132,7 +132,7 @@ static bool check_supported_term(void)
 
     bool supported = false;
     if (poll(&pfd, 1, 500) > 0 && (pfd.revents & POLLIN)) {
-        char buf[256];
+        char buf[TERMINAL_RESPONSE_BUFFER_SIZE];
         ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
         /* Validate response length and null-terminate safely */
         if (n > 0 && n < (ssize_t) sizeof(buf)) {

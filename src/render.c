@@ -40,14 +40,14 @@ renderer_t *renderer_create(int screen_rows, int screen_cols)
 
     /* Allocate protocol buffer for batching I/O
      * Calculate based on actual encoded size and chunk size
-     * Each chunk: header (~80 bytes) + data (4096 bytes) + trailer (2 bytes)
-     * Add 10% safety margin for headers/trailers
+     * Each chunk: header (~80 bytes) + data + trailer
      */
-    const size_t chunk_size = 4096;
+    const size_t chunk_size = KITTY_CHUNK_SIZE;
     const size_t num_chunks =
         (encoded_buffer_size + chunk_size - 1) / chunk_size;
-    /* +100 per chunk for header/trailer, +1K for animation commands */
-    const size_t protocol_buffer_size = num_chunks * (chunk_size + 100) + 1024;
+    const size_t protocol_buffer_size =
+        num_chunks * (chunk_size + KITTY_CHUNK_OVERHEAD) +
+        KITTY_ANIM_BUFFER_SIZE;
     r->protocol_buffer = malloc(protocol_buffer_size);
     if (!r->protocol_buffer) {
         free(r);
@@ -133,7 +133,7 @@ void renderer_render_frame(renderer_t *restrict r,
 
     /* Send Kitty Graphics Protocol escape sequence with base64 data */
     /* Batch all chunks into protocol_buffer for single fwrite() */
-    const size_t chunk_size = 4096;
+    const size_t chunk_size = KITTY_CHUNK_SIZE;
     char *buf = r->protocol_buffer;
     size_t buf_offset = 0;
 
@@ -205,14 +205,14 @@ void renderer_render_frame(renderer_t *restrict r,
         buf_offset += this_size;
 
         /* Validate trailer size before memcpy */
-        if (buf_offset + 2 > r->protocol_buffer_size) {
+        if (buf_offset + KITTY_TRAILER_SIZE > r->protocol_buffer_size) {
             fprintf(stderr, "ERROR: Trailer overflow\n");
             return;
         }
 
         /* Copy trailer */
-        memcpy(buf + buf_offset, "\033\\", 2);
-        buf_offset += 2;
+        memcpy(buf + buf_offset, "\033\\", KITTY_TRAILER_SIZE);
+        buf_offset += KITTY_TRAILER_SIZE;
 
         encoded_offset += this_size;
     }
@@ -240,12 +240,12 @@ void renderer_render_frame(renderer_t *restrict r,
 
     /* On first frame, add newline to move cursor below image */
     if (r->frame_number == 0) {
-        if (buf_offset + 2 > r->protocol_buffer_size) {
+        if (buf_offset + KITTY_TRAILER_SIZE > r->protocol_buffer_size) {
             fprintf(stderr, "ERROR: Newline overflow\n");
             return;
         }
-        memcpy(buf + buf_offset, "\r\n", 2);
-        buf_offset += 2;
+        memcpy(buf + buf_offset, "\r\n", KITTY_TRAILER_SIZE);
+        buf_offset += KITTY_TRAILER_SIZE;
     }
 
     /* Single batched write */
