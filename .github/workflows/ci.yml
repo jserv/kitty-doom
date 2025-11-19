@@ -1,0 +1,196 @@
+---
+name: CI
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  # Build flags
+  CFLAGS: "-Wall -Wextra -Werror"
+
+jobs:
+  build-and-test:
+    name: Build and Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux with GCC
+          - name: "Linux (GCC)"
+            os: ubuntu-latest
+            compiler: gcc
+          # Linux with Clang
+          - name: "Linux (Clang)"
+            os: ubuntu-latest
+            compiler: clang
+          # macOS (Clang only, gcc is an alias on macOS)
+          - name: "macOS (Clang)"
+            os: macos-latest
+            compiler: clang
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download external dependencies
+        run: make download-assets
+
+      - name: Build and test
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          make
+          make check
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck file lsb-release wget software-properties-common gnupg
+
+          # Install clang-format-21 from apt.llvm.org (official LLVM repository)
+          # Version 21.x allows minor updates (e.g., 21.1.x -> 21.2.x) for bug fixes
+          # while maintaining formatting consistency. CI becomes the definitive formatter.
+          # GPG key fingerprint: 6084 F3CF 814B 57C1 CF12 EFD5 15CF 4D18 AF4F 7421
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+
+          # Verify GPG key fingerprint (optional but recommended for security)
+          KEY_FP=$(gpg --with-colons --import-options show-only --import /etc/apt/trusted.gpg.d/apt.llvm.org.asc 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')
+          if [ "$KEY_FP" != "6084F3CF814B57C1CF12EFD515CF4D18AF4F7421" ]; then
+            echo "Warning: GPG key fingerprint mismatch. Expected: 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421, Got: $KEY_FP"
+          fi
+
+          sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-21 main"
+          sudo apt-get update
+          sudo apt-get install -y clang-format-21
+
+          # Install shfmt for shell script formatting (honors .editorconfig)
+          curl -sSL https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64 -o /tmp/shfmt
+          chmod +x /tmp/shfmt
+          sudo mv /tmp/shfmt /usr/local/bin/shfmt
+
+      - name: Download external dependencies
+        run: make download-assets
+
+      - name: Run cppcheck
+        run: |
+          # Only check our own code, skip main.c (includes 48K-line PureDOOM.h)
+          # Suppress miniaudio.h errors (we check sound.c logic, not miniaudio internals)
+          # Optimizations: -j4 (parallel), --max-configs=2 (limit combinations),
+          # --platform=unix64 (CI-specific), --check-level=normal (explicit)
+          cppcheck --enable=warning,performance,portability \
+                   --check-level=normal \
+                   --platform=unix64 \
+                   --max-configs=2 \
+                   --error-exitcode=1 \
+                   --suppress=missingIncludeSystem \
+                   --suppress='*:src/miniaudio.h' \
+                   --inline-suppr \
+                   -j 4 \
+                   $(git ls-files 'src/*.c' 'src/*.h' | \
+                     grep -v 'main.c' | \
+                     grep -v 'PureDOOM.h' | \
+                     grep -v 'profiling.h') \
+                   2>&1 | tee cppcheck-report.txt
+
+      - name: Upload cppcheck report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-report
+          path: cppcheck-report.txt
+
+      - name: Check code formatting
+        run: .ci/check-format.sh
+
+      - name: Check newline at end of files
+        run: .ci/check-newline.sh
+
+  performance-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download external dependencies
+        run: make download-assets
+
+      - name: Build with profiling and tests
+        run: |
+          make clean
+          make profile
+          make build/tests/bench-base64 build/tests/bench-palette
+
+      - name: Run performance benchmarks
+        run: |
+          # Run unit-level performance tests (no terminal required)
+          ./build/tests/bench-base64 > bench-base64.txt
+          ./build/tests/bench-palette > bench-palette.txt
+
+          echo "=== Base64 Benchmark ==="
+          cat bench-base64.txt
+
+          echo "=== Palette Benchmark ==="
+          cat bench-palette.txt
+
+      - name: Compare with baseline (informational)
+        continue-on-error: true
+        run: |
+          # Note: This is informational only
+          # Full performance testing requires terminal interaction
+          if [ -f tests/performance/baseline-current.txt ]; then
+            echo "Baseline comparison:"
+            cat tests/performance/baseline-current.txt
+          else
+            echo "No baseline found - manual profiling required"
+          fi
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            bench-base64.txt
+            bench-palette.txt
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download external dependencies
+        run: make download-assets
+
+      - name: Build with sanitizers
+        run: |
+          # AddressSanitizer
+          make clean
+          CFLAGS="-fsanitize=address -fno-omit-frame-pointer -g" make
+
+          # Run tests with ASan
+          make check
+
+          # UndefinedBehaviorSanitizer
+          make clean
+          CFLAGS="-fsanitize=undefined -fno-omit-frame-pointer -g" make
+
+          # Run tests with UBSan
+          make check
