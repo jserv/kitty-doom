@@ -90,7 +90,7 @@ void renderer_destroy(renderer_t *restrict r)
         return;
 
     /* Delete the Kitty graphics image */
-    printf("\033_Ga=d,i=%ld;\033\\", r->kitty_id);
+    printf("\033_Ga=d,q=2,i=%ld;\033\\", r->kitty_id);
     fflush(stdout);
 
     /* Move cursor to home and clear screen */
@@ -158,10 +158,10 @@ void renderer_render_frame(renderer_t *restrict r,
                     more_chunks ? 1 : 0);
             } else {
                 /* Subsequent frames: frame action */
-                header_len =
-                    snprintf(buf + buf_offset, rem,
-                             "\033_Ga=f,r=1,i=%ld,f=24,x=0,y=0,s=%d,v=%d,m=%d;",
-                             r->kitty_id, WIDTH, HEIGHT, more_chunks ? 1 : 0);
+                header_len = snprintf(
+                    buf + buf_offset, rem,
+                    "\033_Ga=f,r=1,i=%ld,f=24,q=2,x=0,y=0,s=%d,v=%d,m=%d;",
+                    r->kitty_id, WIDTH, HEIGHT, more_chunks ? 1 : 0);
             }
         } else {
             /* Continuation chunks */
@@ -170,7 +170,7 @@ void renderer_render_frame(renderer_t *restrict r,
                                       more_chunks ? 1 : 0);
             } else {
                 header_len =
-                    snprintf(buf + buf_offset, rem, "\033_Ga=f,r=1,m=%d;",
+                    snprintf(buf + buf_offset, rem, "\033_Ga=f,r=1,q=2,m=%d;",
                              more_chunks ? 1 : 0);
             }
         }
@@ -221,7 +221,7 @@ void renderer_render_frame(renderer_t *restrict r,
     if (r->frame_number > 0) {
         size_t rem = r->protocol_buffer_size - buf_offset;
         int anim_len = snprintf(buf + buf_offset, rem,
-                                "\033_Ga=a,c=1,i=%ld;\033\\", r->kitty_id);
+                                "\033_Ga=a,q=2,c=1,i=%ld;\033\\", r->kitty_id);
 
         /* Validate animation command snprintf */
         if (anim_len < 0) {
