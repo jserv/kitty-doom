@@ -15,7 +15,7 @@ TEST_DIR := tests
 TEST_OUT := $(OUT)/tests
 
 # Source files
-SRCS := src/input.c src/main.c src/render.c src/base64.c src/sound.c
+SRCS := src/input.c src/main.c src/render.c src/base64.c src/sound.c src/palette.c
 
 # Object files (placed in build directory)
 OBJS := $(patsubst src/%.c,$(OUT)/%.o,$(SRCS))
@@ -107,7 +107,7 @@ profile: clean
 
 # Test targets
 .PHONY: check
-check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/test-atomic-bitmap
+check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/test-atomic-bitmap $(TEST_OUT)/bench-palette
 	@echo ""
 	@echo "========================================"
 	@echo "  Running Test Suite"
@@ -117,13 +117,10 @@ check: $(TEST_OUT)/bench-base64 $(TEST_OUT)/test-atomic-bitmap
 	@echo ""
 	@$(TEST_OUT)/test-atomic-bitmap
 	@echo ""
+	@$(TEST_OUT)/bench-palette
+	@echo ""
 	@chmod +x $(TEST_DIR)/perf-regression.sh
 	@$(TEST_DIR)/perf-regression.sh
-
-.PHONY: bench-zlib
-bench-zlib: $(TEST_OUT)/bench-zlib
-	$(VECHO) "Running zlib compression benchmark...\n"
-	@$(TEST_OUT)/bench-zlib
 
 # Build test binaries
 $(TEST_OUT)/bench-base64: $(TEST_DIR)/bench-base64.c src/base64.c | $(TEST_OUT)
@@ -134,9 +131,9 @@ $(TEST_OUT)/test-atomic-bitmap: $(TEST_DIR)/test-atomic-bitmap.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
-$(TEST_OUT)/bench-zlib: $(TEST_DIR)/bench-zlib.c | $(TEST_OUT)
+$(TEST_OUT)/bench-palette: $(TEST_DIR)/bench-palette.c src/palette.c | $(TEST_OUT)
 	$(VECHO) "  CC\t$@\n"
-	$(Q)$(CC) $(CFLAGS) -o $@ $< -lz
+	$(Q)$(CC) $(CFLAGS) $(ARCH_FLAGS) -o $@ $^
 
 $(TEST_OUT):
 	$(Q)mkdir -p $(TEST_OUT)
@@ -159,6 +156,12 @@ $(OUT)/main.o: src/main.c $(PUREDOOM_HEADER) | $(OUT)
 # Special rule for base64.c with SIMD-enabled compilation
 # This ensures arch/neon-base64.h and arch/sse-base64.h can use SIMD intrinsics
 $(OUT)/base64.o: src/base64.c | $(OUT)
+	$(VECHO) "  CC\t$@\n"
+	$(Q)$(CC) $(CFLAGS) $(ARCH_FLAGS) -c -o $@ $<
+
+# Special rule for palette.c with SIMD-enabled compilation
+# Enables NEON (ARM) and SSE/SSSE3 (x86) intrinsics for palette conversion
+$(OUT)/palette.o: src/palette.c | $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) $(CFLAGS) $(ARCH_FLAGS) -c -o $@ $<
 
