@@ -121,6 +121,12 @@ static inline size_t base64_encode_sse(const uint8_t *restrict in,
                                       1, 2, 0, 1     /* First group */
     );
 
+    /* Use non-temporal stores for large buffers (>1MB) to reduce cache
+     * pollution. For typical DOOM frames (~256KB), regular stores are more
+     * efficient. _mm_stream_si128 requires 16-byte alignment; check at runtime.
+     */
+    const bool use_streaming = (inlen > 1024 * 1024);
+
     /* Main loop: process 12 bytes -> 16 base64 chars */
     while (ip + 12 <= in + inlen) {
         /* Load 12 bytes */
@@ -135,11 +141,21 @@ static inline size_t base64_encode_sse(const uint8_t *restrict in,
         /* Translate 6-bit indices to base64 characters */
         v = bitmap128v8_6(v);
 
-        /* Store 16 base64 characters */
-        _mm_storeu_si128((__m128i *) op, v);
+        /* Store 16 base64 characters
+         * Use streaming store only if buffer is large AND pointer is aligned
+         */
+        if (use_streaming && (((uintptr_t) op & 15) == 0)) {
+            _mm_stream_si128((__m128i *) op, v);
+        } else {
+            _mm_storeu_si128((__m128i *) op, v);
+        }
         op += 16;
         ip += 12;
     }
+
+    /* Ensure all non-temporal stores are visible before continuing */
+    if (use_streaming)
+        _mm_sfence();
 
     /* Fallback to scalar for remainder */
     while (ip + 2 < in + inlen) {

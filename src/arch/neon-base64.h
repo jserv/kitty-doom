@@ -2,7 +2,8 @@
 /*
  * ARM NEON optimized base64 encoding
  *
- * Copyright 2021 The simdutf authors
+ * Copyright (c) 2025 National Cheng Kung University, Taiwan
+ * Copyright (c) 2021 The simdutf authors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -68,6 +69,14 @@ static inline size_t base64_encode_neon(const uint8_t *restrict input,
     size_t i = 0;
     size_t output_len = 0;
 
+    /* Use non-temporal stores for large buffers (>1MB) to reduce cache
+     * pollution. For typical DOOM frames (~256KB), regular stores are more
+     * efficient. STNP is part of ARMv8.0-A base instruction set.
+     */
+#if defined(__aarch64__)
+    const bool use_streaming = (input_len > 1024 * 1024);
+#endif
+
     /* Main loop: process 48 bytes -> 64 base64 chars (16x parallelism) */
     for (; i + 48 <= input_len; i += 48) {
         /* Load 48 bytes as 3x16 interleaved vectors */
@@ -107,10 +116,49 @@ static inline size_t base64_encode_neon(const uint8_t *restrict input,
         result.val[2] = vqtbl4q_u8(table, result.val[2]);
         result.val[3] = vqtbl4q_u8(table, result.val[3]);
 
-        /* Store 64 bytes as 4x16 interleaved vectors */
+        /* Store 64 bytes as 4x16 interleaved vectors
+         * AArch64: STNP for large buffers, vst4q_u8 for small/typical workloads
+         * ARMv7: Always uses vst4q_u8 (STNP not available on 32-bit ARM)
+         */
+#if defined(__aarch64__)
+        if (use_streaming) {
+            /* STNP: Store Pair of Q registers with Non-temporal hint
+             * Part of ARMv8.0-A base instruction set (available on all AArch64)
+             * Uses inline assembly (no portable intrinsic exists)
+             * Constraints: "r" = general-purpose register (base address)
+             *              "w" = FP/SIMD register, %qN = 128-bit vector view
+             * Note: Non-temporal hint is implementation-defined; some cores may
+             *       treat as regular cached stores (no performance gain).
+             */
+            __asm__ __volatile__(
+                "stnp %q1, %q2, [%0]\n"      /* Store result.val[0,1] */
+                "stnp %q3, %q4, [%0, #32]\n" /* Store result.val[2,3] */
+                :
+                : "r"(output + output_len), "w"(result.val[0]),
+                  "w"(result.val[1]), "w"(result.val[2]), "w"(result.val[3])
+                : "memory");
+        } else {
+            vst4q_u8(output + output_len, result);
+        }
+#else
+        /* ARMv7 NEON: Regular stores only (32-bit ARM, no STNP) */
         vst4q_u8(output + output_len, result);
+#endif
         output_len += 64;
     }
+
+    /* Ensure all non-temporal stores are visible before continuing
+     * DMB (Data Memory Barrier) ensures ordering on AArch64
+     *
+     * Conservative barrier: ensures all STNP stores complete before return.
+     * Not strictly required for single-threaded use (C abstract machine handles
+     * ordering), but provides x86-like sfence semantics for multi-core safety.
+     * Analogous to x86 _mm_sfence() after _mm_stream_si128.
+     */
+#if defined(__aarch64__)
+    if (use_streaming)
+        __asm__ __volatile__("dmb ishst" ::: "memory");
+#endif
 
     /* Fallback to scalar for remainder */
     extern size_t base64_encode_scalar(const uint8_t *restrict input,
