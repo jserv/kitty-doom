@@ -64,7 +64,10 @@ renderer_t *renderer_create(int screen_rows, int screen_cols)
         .protocol_buffer_size = protocol_buffer_size,
     };
 
-    /* Generate random image ID for Kitty protocol */
+    /* Generate random image ID for Kitty protocol
+     * Note: Uses rand() which provides probabilistic uniqueness, not
+     * guaranteed. Collision probability is low for typical usage patterns.
+     */
     srand(time(NULL));
     r->kitty_id = rand();
 

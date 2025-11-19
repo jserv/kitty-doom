@@ -9,7 +9,8 @@
  * Limitation: NEON lacks hardware gather instructions
  *
  * Why not faster?
- * - NEON provides no hardware gather instructions for 256-entry palette lookups.
+ * - NEON provides no hardware gather instructions for 256-entry palette
+ * lookups.
  * - The scalar gather loop is unavoidable and dominates execution time.
  * - NEON benefit comes primarily from vst3_u8 interleaved stores.
  *
@@ -17,7 +18,8 @@
  * - The palette_r/g/b_neon arrays have exactly 256 entries each.
  * - The indexed buffer has at least npixels valid bytes.
  * - The rgb24 buffer has at least npixels*3 bytes allocated.
- * - The npixels parameter can be any value (remainder is handled by scalar code).
+ * - The npixels parameter can be any value (remainder is handled by scalar
+ *   code).
  */
 
 #pragma once
@@ -31,7 +33,8 @@
 /* Pre-expanded palette for lookup operations.
  *
  * Each color channel is stored separately (256 entries per channel) to improve
- * cache locality. All arrays are aligned to 64 bytes for optimal cache line usage.
+ * cache locality. All arrays are aligned to 64 bytes for optimal cache line
+ * usage.
  */
 static uint8_t palette_r_neon[256] __attribute__((aligned(64)));
 static uint8_t palette_g_neon[256] __attribute__((aligned(64)));

@@ -35,9 +35,10 @@ static const char *last_print_string = NULL;
 static sound_system_t *global_sound = NULL;
 
 /* Signal handling for graceful shutdown
- * IMPORTANT: Only sig_atomic_t access is allowed in signal handlers (POSIX).
- * The handler sets a flag, and shutdown is handled in the main thread.
- * Using volatile ensures visibility across signal context boundary.
+ * POSIX-compliant: Uses volatile sig_atomic_t which is async-signal-safe.
+ * The handler only sets a flag; actual shutdown is handled in main thread.
+ * Main loop checks this flag and exits cleanly, calling input_request_exit()
+ * from normal thread context (not from signal handler).
  */
 static volatile sig_atomic_t signal_received = 0;
 

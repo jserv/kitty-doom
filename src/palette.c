@@ -7,7 +7,8 @@
  * - x86/x86_64: Scalar fallback with compiler auto-vectorization
  *
  * Note: Hand-coded SSE implementation was removed due to performance
- * regression. Modern compilers auto-vectorize scalar code effectively on x86_64.
+ * regression. Modern compilers auto-vectorize scalar code effectively on
+ * x86_64.
  */
 
 #include <stdbool.h>
@@ -24,8 +25,8 @@ static uint8_t palette_g_scalar[256] __attribute__((aligned(64)));
 static uint8_t palette_b_scalar[256] __attribute__((aligned(64)));
 static bool palette_initialized_scalar = false;
 
-__attribute__((unused)) static void
-palette_init_scalar(const uint8_t *restrict palette)
+__attribute__((unused)) static void palette_init_scalar(
+    const uint8_t *restrict palette)
 {
     for (int i = 0; i < 256; i++) {
         palette_r_scalar[i] = palette[i * 3 + 0];
@@ -35,10 +36,10 @@ palette_init_scalar(const uint8_t *restrict palette)
     palette_initialized_scalar = true;
 }
 
-__attribute__((unused)) static void
-palette_to_rgb24_scalar(const uint8_t *restrict indexed,
-                        uint8_t *restrict rgb24,
-                        size_t npixels)
+__attribute__((unused)) static void palette_to_rgb24_scalar(
+    const uint8_t *restrict indexed,
+    uint8_t *restrict rgb24,
+    size_t npixels)
 {
     for (size_t i = 0; i < npixels; i++) {
         uint8_t idx = indexed[i];

@@ -19,9 +19,9 @@
 static void generate_test_palette(uint8_t *palette)
 {
     for (int i = 0; i < NCOLORS; i++) {
-        palette[i * 3 + 0] = (i * 7) % 256;   /* R */
-        palette[i * 3 + 1] = (i * 13) % 256;  /* G */
-        palette[i * 3 + 2] = (i * 19) % 256;  /* B */
+        palette[i * 3 + 0] = (i * 7) % 256;  /* R */
+        palette[i * 3 + 1] = (i * 13) % 256; /* G */
+        palette[i * 3 + 2] = (i * 19) % 256; /* B */
     }
 }
 
@@ -29,12 +29,14 @@ static void generate_test_palette(uint8_t *palette)
 static void generate_test_indexed(uint8_t *indexed)
 {
     for (size_t i = 0; i < NPIXELS; i++)
-        indexed[i] = (i * 17) % NCOLORS;  /* Pseudo-random pattern */
+        indexed[i] = (i * 17) % NCOLORS; /* Pseudo-random pattern */
 }
 
 /* Scalar reference implementation for correctness testing */
-static void palette_to_rgb24_scalar_ref(const uint8_t *indexed, uint8_t *rgb24,
-                                        const uint8_t *palette, size_t npixels)
+static void palette_to_rgb24_scalar_ref(const uint8_t *indexed,
+                                        uint8_t *rgb24,
+                                        const uint8_t *palette,
+                                        size_t npixels)
 {
     for (size_t i = 0; i < npixels; i++) {
         uint8_t idx = indexed[i];
@@ -99,10 +101,10 @@ int main(void)
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 
-    long total_ns =
-        (end.tv_sec - start.tv_sec) * 1000000000L + (end.tv_nsec - start.tv_nsec);
+    long total_ns = (end.tv_sec - start.tv_sec) * 1000000000L +
+                    (end.tv_nsec - start.tv_nsec);
     double avg_us = (double) total_ns / bench_iterations / 1000.0;
-    double frame_budget_pct = (avg_us * 100.0) / 28571.0;  /* 35 FPS */
+    double frame_budget_pct = (avg_us * 100.0) / 28571.0; /* 35 FPS */
 
     printf("\nPerformance:\n");
     printf("  Average time: %.2f us/frame\n", avg_us);

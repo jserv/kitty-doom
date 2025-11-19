@@ -23,9 +23,12 @@ typedef struct {
  *   exit flags.
  * - Main thread: Calls input API functions which may block on condition
  *   variables for terminal queries.
- * - Thread safety: All public APIs are thread-safe. input_is_running() uses
- *   lock-free atomics. input_request_exit() is safe to call from signal
- *   handlers.
+ * - Thread safety: All public APIs are thread-safe. input_is_running() and
+ *   input_request_exit() use lock-free atomics (memory_order_relaxed).
+ *
+ * Note: input_request_exit() uses C11 atomics which are not guaranteed
+ * async-signal-safe by POSIX. For signal handling, set a flag in the handler
+ * and call input_request_exit() from normal thread context.
  */
 typedef struct input input_t;
 
