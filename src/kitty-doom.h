@@ -15,7 +15,18 @@ typedef struct {
     int second;
 } int_pair_t;
 
-/* Input subsystem */
+/* Input subsystem
+ *
+ * Threading model:
+ * - Input thread: Runs continuously parsing VT sequences and scheduling key
+ *   releases. Uses pthread_mutex for query synchronization and atomics for
+ *   exit flags.
+ * - Main thread: Calls input API functions which may block on condition
+ *   variables for terminal queries.
+ * - Thread safety: All public APIs are thread-safe. input_is_running() uses
+ *   lock-free atomics. input_request_exit() is safe to call from signal
+ *   handlers.
+ */
 typedef struct input input_t;
 
 input_t *input_create(void);
@@ -35,7 +46,16 @@ void renderer_destroy(renderer_t *restrict r);
 void renderer_render_frame(renderer_t *restrict r,
                            const unsigned char *restrict rgb24_frame);
 
-/* Sound subsystem (optional, can be NULL if disabled) */
+/* Sound subsystem (optional, can be NULL if disabled)
+ *
+ * Threading model:
+ * - Audio callback thread: Runs in miniaudio's internal thread, calls
+ *   doom_get_sound_buffer() to retrieve mixed audio.
+ * - Main thread: Calls doom_update() which mixes sound effects into buffer.
+ * - Synchronization: sound_lock/sound_unlock must wrap doom_update() calls to
+ *   prevent race conditions between audio mixing and callback.
+ * - Thread safety: All APIs are thread-safe when used with proper locking.
+ */
 typedef struct sound_system sound_system_t;
 
 sound_system_t *sound_init(void);

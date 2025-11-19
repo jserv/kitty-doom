@@ -6,7 +6,9 @@
 
 #include <poll.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,15 +31,16 @@ static const char *last_print_string = NULL;
 static sound_system_t *global_sound = NULL;
 
 /* Signal handling for graceful shutdown
- * IMPORTANT: Only sig_atomic_t access is allowed in signal handlers.
+ * IMPORTANT: Only atomic access is allowed in signal handlers.
  * The handler sets a flag, and shutdown is handled in the main thread.
+ * Using _Atomic ensures proper memory ordering across threads.
  */
-static volatile sig_atomic_t signal_received = 0;
+static _Atomic sig_atomic_t signal_received = 0;
 
 static void signal_handler(int signum)
 {
     (void) signum; /* Unused parameter */
-    signal_received = 1;
+    atomic_store_explicit(&signal_received, 1, memory_order_release);
 }
 
 static void print_handler(const char *s)
@@ -74,10 +77,15 @@ static bool check_supported_term(void)
 {
     const char *term = getenv("TERM");
     const char *term_program = getenv("TERM_PROGRAM");
+    const char *kitty_window_id = getenv("KITTY_WINDOW_ID");
 
     /* Quick check: known compatible terminals via environment variables */
     if (term && strstr(term, "kitty"))
         return true; /* Kitty sets TERM=xterm-kitty */
+
+    /* Reliable Kitty detection: KITTY_WINDOW_ID is always set in Kitty */
+    if (kitty_window_id)
+        return true;
 
     /* TODO: Support Ghostty/WezTerm */
     if (term_program) {
@@ -121,10 +129,23 @@ static bool check_supported_term(void)
     if (poll(&pfd, 1, 500) > 0 && (pfd.revents & POLLIN)) {
         char buf[256];
         ssize_t n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
-        if (n > 0) {
+        /* Validate response length and null-terminate safely */
+        if (n > 0 && n < (ssize_t) sizeof(buf)) {
             buf[n] = '\0';
-            /* Check for Kitty Graphics response */
-            if (strstr(buf, "\033_Gi=31") || strstr(buf, "_Gi=31"))
+            /* Validate response contains only safe characters
+             * Allow all printable ASCII (32-126) plus ESC (27)
+             * This prevents binary injection and control characters
+             * while allowing commas, colons, hyphens, spaces in responses
+             */
+            bool valid = true;
+            for (ssize_t i = 0; i < n && valid; i++) {
+                uint8_t c = (uint8_t) buf[i];
+                /* Allow ESC (27) and printable ASCII (32-126) */
+                if (!(c == 27 || (c >= 32 && c <= 126)))
+                    valid = false;
+            }
+            /* Check for Kitty Graphics response (only if validation passed) */
+            if (valid && (strstr(buf, "\033_Gi=31") || strstr(buf, "_Gi=31")))
                 supported = true;
         }
     }
@@ -246,7 +267,8 @@ int main(int argc, char **argv)
     }
 
     /* Main game loop */
-    while (input_is_running(input) && !exit_requested && !signal_received) {
+    while (input_is_running(input) && !exit_requested &&
+           !atomic_load_explicit(&signal_received, memory_order_acquire)) {
         /* Lock audio before doom_update() to prevent race conditions.
          * doom_update() internally calls doom_get_sound_buffer() for audio
          * mixing which must be synchronized with the audio callback thread
