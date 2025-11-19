@@ -6,7 +6,6 @@
 
 #include <poll.h>
 #include <signal.h>
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -31,16 +30,16 @@ static const char *last_print_string = NULL;
 static sound_system_t *global_sound = NULL;
 
 /* Signal handling for graceful shutdown
- * IMPORTANT: Only atomic access is allowed in signal handlers.
+ * IMPORTANT: Only sig_atomic_t access is allowed in signal handlers (POSIX).
  * The handler sets a flag, and shutdown is handled in the main thread.
- * Using _Atomic ensures proper memory ordering across threads.
+ * Using volatile ensures visibility across signal context boundary.
  */
-static _Atomic sig_atomic_t signal_received = 0;
+static volatile sig_atomic_t signal_received = 0;
 
 static void signal_handler(int signum)
 {
     (void) signum; /* Unused parameter */
-    atomic_store_explicit(&signal_received, 1, memory_order_release);
+    signal_received = 1;
 }
 
 static void print_handler(const char *s)
@@ -267,8 +266,7 @@ int main(int argc, char **argv)
     }
 
     /* Main game loop */
-    while (input_is_running(input) && !exit_requested &&
-           !atomic_load_explicit(&signal_received, memory_order_acquire)) {
+    while (input_is_running(input) && !exit_requested && !signal_received) {
         /* Lock audio before doom_update() to prevent race conditions.
          * doom_update() internally calls doom_get_sound_buffer() for audio
          * mixing which must be synchronized with the audio callback thread
