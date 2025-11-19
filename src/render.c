@@ -117,7 +117,7 @@ void renderer_render_frame(renderer_t *restrict r,
         fflush(stdout);
     }
 
-    /* rgb24_frame is already in RGB24 format from doom_get_framebuffer(3) */
+    /* rgb24_frame is in RGB24 format (converted via SIMD palette_to_rgb24) */
     const size_t bitmap_size = WIDTH * HEIGHT * 3;
 
     /* Encode RGB data to base64 */

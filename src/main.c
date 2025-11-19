@@ -23,6 +23,11 @@
 #include "PureDOOM.h"
 
 #include "kitty-doom.h"
+#include "palette.h"
+#include "profiling.h"
+
+/* PureDOOM palette (256 colors × 3 bytes RGB = 768 bytes) */
+extern unsigned char screen_palette[256 * 3];
 
 static const char *last_print_string = NULL;
 
@@ -265,6 +270,22 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
+    /* Allocate RGB24 buffer for SIMD palette conversion
+     * DOOM framebuffer: 320×200 = 64000 pixels
+     * RGB24 output: 64000 × 3 = 192000 bytes
+     */
+    const size_t npixels = 320 * 200;
+    unsigned char *rgb24_buffer = malloc(npixels * 3);
+    if (!rgb24_buffer) {
+        fprintf(stderr, "Failed to allocate RGB24 buffer\n");
+        renderer_destroy(r);
+        input_destroy(input);
+        os_destroy(os);
+        if (global_sound)
+            sound_shutdown(global_sound);
+        return EXIT_FAILURE;
+    }
+
     /* Main game loop */
     while (input_is_running(input) && !exit_requested && !signal_received) {
         /* Lock audio before doom_update() to prevent race conditions.
@@ -275,9 +296,46 @@ int main(int argc, char **argv)
         doom_update();
         sound_unlock(global_sound);
 
-        /* RGB24 format is obtained directly from PureDOOM */
-        const unsigned char *frame = doom_get_framebuffer(3);
-        renderer_render_frame(r, frame);
+        /* SIMD palette conversion.
+         * Get indexed 8-bit framebuffer from PureDOOM (channels=1), convert to
+         * RGB24 using architecture-specific SIMD (NEON/SSE/SSSE3) with vst3_u8
+         * interleaved stores. Scalar gather loop is unavoidable without
+         * hardware gather instructions, but SIMD benefits come from optimized
+         * RGB interleaving.
+         *
+         * Note: PureDOOM's screen_palette is initialized dynamically during
+         * gameplay. We check initialization status and use fallback conversion
+         * until palette is ready.
+         */
+        static int palette_ready = -1; /* -1=unknown, 0=not ready, 1=ready */
+
+        /* Check palette initialization on first call */
+        if (palette_ready == -1) {
+            int sum = screen_palette[0] + screen_palette[1] + screen_palette[2];
+            palette_ready = (sum > 0) ? 1 : 0;
+        }
+
+        if (palette_ready) {
+            /* SIMD path: indexed → palette_to_rgb24 → RGB24 */
+            const unsigned char *indexed = doom_get_framebuffer(1);
+            PROFILE_START();
+            palette_to_rgb24(indexed, rgb24_buffer, screen_palette, npixels);
+            PROFILE_END("  Palette conversion");
+            renderer_render_frame(r, rgb24_buffer);
+        } else {
+            /* Fallback: Use PureDOOM's conversion until palette ready */
+            const unsigned char *rgb24 = doom_get_framebuffer(3);
+            renderer_render_frame(r, rgb24);
+
+            /* Recheck palette every 10 frames */
+            static int check_counter = 0;
+            if (++check_counter % 10 == 0) {
+                int sum =
+                    screen_palette[0] + screen_palette[1] + screen_palette[2];
+                if (sum > 0)
+                    palette_ready = 1;
+            }
+        }
     }
 
     /* Input thread is requested to exit before cleanup
@@ -287,6 +345,7 @@ int main(int argc, char **argv)
     input_request_exit(input);
 
     /* Resources are cleaned up in reverse order */
+    free(rgb24_buffer);
     renderer_destroy(r);
     input_destroy(input);
     os_destroy(os);
