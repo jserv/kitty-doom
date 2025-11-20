@@ -194,3 +194,135 @@ jobs:
 
           # Run tests with UBSan
           make check
+
+  kitty-integration:
+    name: Kitty Graphics Integration Test
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Informational, not blocking
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Kitty + tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            mesa-utils \
+            libgl1-mesa-dri \
+            scrot \
+            imagemagick \
+            bc
+
+          # Download and install latest prebuilt Kitty binary
+          # Use official installer from https://sw.kovidgoyal.net/kitty/binary/
+          echo "Installing latest Kitty from official prebuilt binary..."
+          curl -fsSL https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin
+
+          # Verify installation directory exists
+          if [ ! -d "$HOME/.local/kitty.app/bin" ]; then
+            echo "❌ Kitty installation failed: directory not found"
+            exit 1
+          fi
+
+          # Add Kitty to PATH for subsequent steps
+          echo "$HOME/.local/kitty.app/bin" >> $GITHUB_PATH
+
+          # Verify binary is executable and show version
+          KITTY_BIN="$HOME/.local/kitty.app/bin/kitty"
+          if [ ! -x "$KITTY_BIN" ]; then
+            echo "❌ Kitty binary not executable"
+            exit 1
+          fi
+
+          echo "✅ Kitty installed successfully:"
+          $KITTY_BIN --version
+
+      - name: Download external dependencies
+        run: make download-assets
+
+      - name: Build kitty-doom
+        run: make
+
+      - name: Smoke test (launch + auto-quit)
+        timeout-minutes: 1
+        run: |
+          # Auto-quit after 3 seconds with 'q' key
+          # Hard timeout at 10s to prevent infinite hangs
+          # DBus warnings are harmless - real issue is game auto-exit
+          (sleep 3 && echo 'q') | \
+          timeout 10s \
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            env KITTY_DISABLE_WAYLAND=1 \
+            kitty --config NONE --detach=no ./build/kitty-doom -nosound \
+          || true
+
+          echo "✅ Kitty integration smoke test completed (exit via timeout is expected)"
+
+      - name: Visual verification test
+        timeout-minutes: 2
+        run: |
+          # Launch game and capture screenshot (with proper DISPLAY handling)
+          # Hard timeout at 15s - DBus warnings are harmless noise
+          XVFB_EXIT=0
+          timeout 15s xvfb-run -a -s "-screen 0 1024x768x24" sh -c '
+            # Start kitty-doom in background (Wayland disabled for X11 only)
+            env KITTY_DISABLE_WAYLAND=1 \
+              kitty --config NONE --detach=no ./build/kitty-doom -nosound &
+            GAME_PID=$!
+
+            # Wait longer for game to render (title screen appears)
+            # 4 seconds to account for slow CI runners
+            sleep 4
+
+            # Capture screenshot (inherit $DISPLAY from xvfb-run)
+            scrot /tmp/kitty-doom-screenshot.png 2>&1 | tee /tmp/scrot.log || \
+              import -window root /tmp/kitty-doom-screenshot.png 2>&1 | tee /tmp/import.log
+
+            # Kill game
+            kill $GAME_PID 2>/dev/null || true
+            wait $GAME_PID 2>/dev/null || true
+          ' || XVFB_EXIT=$?
+
+          # Log xvfb-run exit code for debugging
+          if [ $XVFB_EXIT -ne 0 ]; then
+            echo "⚠️ xvfb-run exited with code $XVFB_EXIT"
+          fi
+
+          # Verify screenshot was captured
+          if [ -f /tmp/kitty-doom-screenshot.png ]; then
+            echo "✅ Screenshot captured successfully"
+
+            # Get screenshot dimensions and verify correctness
+            SIZE=$(identify -format "%wx%h" /tmp/kitty-doom-screenshot.png)
+            echo "Screenshot size: $SIZE"
+
+            # Assert expected dimensions
+            if [ "$SIZE" != "1024x768" ]; then
+              echo "❌ Unexpected screenshot size: $SIZE (expected 1024x768)"
+              exit 1
+            fi
+
+            # DOOM-specific visual validation (4-level checks)
+            .ci/check-visual.sh /tmp/kitty-doom-screenshot.png
+          else
+            echo "⚠️ Screenshot capture failed"
+            # Show capture tool logs if available
+            [ -f /tmp/scrot.log ] && echo "scrot log:" && cat /tmp/scrot.log
+            [ -f /tmp/import.log ] && echo "import log:" && cat /tmp/import.log
+            exit 1
+          fi
+
+      # Optional: Add demo playback test when demo file is created
+      # - name: Demo playback test
+      #   timeout-minutes: 1
+      #   run: |
+      #     if [ -f tests/smoke_test.lmp ]; then
+      #       xvfb-run -a -s "-screen 0 1024x768x24" \
+      #         kitty --config NONE \
+      #         ./build/kitty-doom -nosound -playdemo tests/smoke_test.lmp
+      #       echo "✅ Demo playback completed"
+      #     else
+      #       echo "⏭️ No demo file found, skipping"
+      #     fi
