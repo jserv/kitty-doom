@@ -73,7 +73,8 @@ PUREDOOM_CFLAGS_TO_CHECK := \
     -Wno-enum-conversion \
     -Wno-implicit-fallthrough \
     -Wno-dangling-pointer \
-    -Wno-maybe-uninitialized
+    -Wno-maybe-uninitialized \
+    -Wno-unterminated-string-initialization
 
 # Only add flags that the compiler supports
 PUREDOOM_CFLAGS := $(foreach flag,$(PUREDOOM_CFLAGS_TO_CHECK),$(call check_flag,$(flag)))
