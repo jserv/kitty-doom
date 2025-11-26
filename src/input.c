@@ -21,8 +21,19 @@
 #define MAX_DA 32
 #define MAX_PENDING_RELEASES 16
 #define MAX_KEY_CODE 256
+#define KKP_LEFT_CTRL 57442
+#define KKP_RIGHT_SHIFT 57447
+#define KKP_RIGHT_ALT 57449
 
-typedef enum { STATE_GROUND, STATE_ESC, STATE_SS3, STATE_CSI } parser_state_t;
+/* bits: disambiguate|report_events|report_alternate */
+#define KKP_MODE_FLAGS 11
+
+typedef enum {
+    STATE_GROUND,
+    STATE_ESC,
+    STATE_SS3,
+    STATE_CSI,
+} parser_state_t;
 
 typedef struct {
     int key;
@@ -35,6 +46,13 @@ typedef struct {
     bool tracking;      /* Whether mouse tracking is active */
     bool buttons[3];    /* Button states [left, middle, right] */
 } mouse_state_t;
+
+/* CSI u parameter structure */
+typedef struct {
+    int keycode;
+    int modifiers;
+    int event_type;
+} csi_u_params_t;
 
 struct input {
     pthread_t thread;
@@ -50,6 +68,10 @@ struct input {
     int parm;
     int parm_count;
     char parm_prefix;
+
+    /* CSI u sub_parm */
+    int sub_parms[MAX_PARMS][4];
+    int sub_parm_count[MAX_PARMS];
 
     int *device_attributes;
     int da_count;
@@ -80,6 +102,12 @@ struct input {
 
     /* Mouse tracking state */
     mouse_state_t mouse;
+
+    /* Kitty keyboard protocol state */
+    bool kitty_keyboard_protocol_active;
+
+    /* CSI u parameter */
+    csi_u_params_t csi_u_params;
 };
 
 static inline void for_each_modifier(int modifiers, void (*lambda)(int))
@@ -221,6 +249,11 @@ static bool is_key_held(input_t *restrict input, int key)
     return (bitmap_word & (1ULL << bit)) != 0;
 }
 
+static bool is_fire_key(int key)
+{
+    return key == ' ' || key == 'f' || key == 'F' || key == 'i' || key == 'I';
+}
+
 static void ascii_key(input_t *restrict input, char ch)
 {
     int doom_key = ch;
@@ -229,9 +262,8 @@ static void ascii_key(input_t *restrict input, char ch)
     if (doom_key == '\n')
         doom_key = DOOM_KEY_ENTER; /*  Kitty sends LF for Enter */
 
-    /* Map Space, F, and I keys to fire (Ctrl is hard to capture in terminals)
-     */
-    if (ch == ' ' || ch == 'f' || ch == 'F' || ch == 'i' || ch == 'I')
+
+    if (is_fire_key(ch))
         doom_key = DOOM_KEY_CTRL;
 
     /* Handle key repeat: only send key_down if not already held.
@@ -241,6 +273,31 @@ static void ascii_key(input_t *restrict input, char ch)
     if (!is_key_held(input, doom_key))
         doom_key_down(doom_key);
     sched_key_release(input, doom_key, 50); /*  50ms delay */
+}
+
+static void handle_kkp_event(int doom_key, int event_type)
+{
+    /* Event Type 2 (Key Repeat) is explicitly ignored.
+     * Reason: Game engine handles continuous movement by tracking
+     * the key state (active/inactive) between the 'down' and 'up' events.
+     */
+    if (event_type == 1)
+        doom_key_down(doom_key);
+    else if (event_type == 3)
+        doom_key_up(doom_key);
+}
+
+static void dispatch_kkp_key(input_t *restrict input)
+{
+    int doom_key = input->csi_u_params.keycode;
+    if (doom_key == KKP_LEFT_CTRL || is_fire_key(input->csi_u_params.keycode))
+        doom_key = DOOM_KEY_CTRL;
+    else if (doom_key == KKP_RIGHT_SHIFT)
+        doom_key = DOOM_KEY_SHIFT;
+    else if (doom_key == KKP_RIGHT_ALT)
+        doom_key = DOOM_KEY_ALT;
+
+    handle_kkp_event(doom_key, input->csi_u_params.event_type);
 }
 
 static void ss3_key(input_t *restrict input, char ch)
@@ -348,6 +405,12 @@ static void csi_key(input_t *restrict input, char ch, int parm1, int parm2)
          */
         bool already_held = is_key_held(input, doom_key);
         bool is_new_keypress = false;
+
+        /* handle kitty release event */
+        if (input->kitty_keyboard_protocol_active) {
+            handle_kkp_event(doom_key, input->csi_u_params.event_type);
+            return;
+        }
 
         if (already_held) {
             /* Check how long until scheduled release */
@@ -543,22 +606,70 @@ static void parse_mouse_sgr(input_t *restrict input, char final_char)
 #undef MOUSE_SENSITIVITY
 }
 
+static void set_csi_u_params(input_t *restrict input)
+{
+    input->csi_u_params.event_type = 1; /* Default to press */
+    if (input->parm_count > 1) {
+        input->csi_u_params.modifiers = input->parms[1];
+        if (input->sub_parm_count[1] > 1)
+            input->csi_u_params.event_type = input->sub_parms[1][0];
+    }
+}
+
+static void finalize_csi_param(input_t *restrict input)
+{
+    if (input->parm_count < MAX_PARMS) {
+        int idx = input->parm_count++;
+        if (input->sub_parm_count[idx] > 0 && input->sub_parm_count[idx] < 4) {
+            input->sub_parms[idx][input->sub_parm_count[idx] - 1] = input->parm;
+            input->sub_parm_count[idx]++;
+        } else {
+            input->parms[idx] = input->parm;
+        }
+    }
+}
+
 static void parse_char(input_t *restrict input, char ch)
 {
     if (ch == 3) {
         /* Ctrl+C - immediate exit */
         atomic_store_explicit(&input->exit_requested, true,
                               memory_order_relaxed);
-    } else if (ch == 27) {
-        /* ESC - could be start of escape sequence OR standalone ESC key.
-         * If parser is already in STATE_ESC, the previous ESC was standalone.
-         */
+        return;
+    }
+
+    /*
+     * If the Kitty keyboard protocol is active, all keyboard input is delivered
+     * via CSI 'u' sequences. Therefore, any other characters received in the
+     * ground state should be ignored, as they are not valid key presses. The
+     * state machine is still required to parse CSI sequences for keyboard,
+     * mouse, and terminal reports.
+     */
+    if (input->kitty_keyboard_protocol_active && input->state == STATE_GROUND &&
+        ch != 27) {
+        return; /* Ignore non-escape characters in ground state */
+    }
+
+    /*
+     * ESC is special: it can be a standalone keypress or the start of a
+     * sequence. If we are already in STATE_ESC, a second ESC means the first
+     * was a keypress. Otherwise, we enter STATE_ESC and await the next char.
+     * This logic is kept separate from the main state switch for clarity.
+     */
+    if (ch == 27) {
         if (input->state == STATE_ESC)
             ascii_key(input, 27);
         input->state = STATE_ESC;
-    } else if (input->state == STATE_GROUND) {
+        return;
+    }
+
+    switch (input->state) {
+    case STATE_GROUND:
+        /* This case is only reached if kitty protocol is inactive. */
         ascii_key(input, ch);
-    } else if (input->state == STATE_ESC) {
+        break;
+
+    case STATE_ESC:
         if (ch == 'O') {
             /* Start of SS3 escape sequence */
             input->state = STATE_SS3;
@@ -568,30 +679,49 @@ static void parse_char(input_t *restrict input, char ch)
             input->parm = 0;
             input->parm_count = 0;
             input->parm_prefix = 0;
+            for (int i = 0; i < MAX_PARMS; i++) {
+                input->sub_parm_count[i] = 0;
+            }
         } else {
             /* ESC followed by non-sequence character - send standalone ESC */
             ascii_key(input, 27);
             input->state = STATE_GROUND;
-            /* Also process the current character if it's printable */
-            if (ch >= 32 && ch < 127)
+            if (!input->kitty_keyboard_protocol_active && ch >= 32 &&
+                ch < 127) {
                 ascii_key(input, ch);
+            }
         }
-    } else if (input->state == STATE_SS3) {
+        break;
+    case STATE_SS3:
         ss3_key(input, ch);
         input->state = STATE_GROUND;
-    } else if (input->state == STATE_CSI) {
-        /* Handle prefix characters FIRST (before digits) */
+        break;
+    case STATE_CSI:
         if (ch == '?' || ch == '>' || ch == '<') {
             input->parm_prefix = ch;
         } else if (ch >= '0' && ch <= '9') {
             input->parm = input->parm * 10 + (ch - '0');
         } else if (ch == ';') {
-            if (input->parm_count < MAX_PARMS)
-                input->parms[input->parm_count++] = input->parm;
+            finalize_csi_param(input);
+            input->parm = 0;
+        } else if (ch == ':') {
+            /* Sub-parameter delimiter (Kitty Keyboard Protocol)
+             * If a parameter contains sub-parameters, the first value goes into
+             * parms[idx], and any additional values go into sub_parms[idx][].
+             * */
+            if (input->parm_count < MAX_PARMS) {
+                int idx = input->parm_count;
+                if (input->sub_parm_count[idx] > 0 &&
+                    input->sub_parm_count[idx] < 4) {
+                    input->sub_parms[idx][input->sub_parm_count[idx] - 1] =
+                        input->parm;
+                } else
+                    input->parms[idx] = input->parm;
+                input->sub_parm_count[idx]++;
+            }
             input->parm = 0;
         } else {
-            if (input->parm_count < MAX_PARMS)
-                input->parms[input->parm_count++] = input->parm;
+            finalize_csi_param(input);
 
             if (ch == 'c' && input->parm_prefix == '?') {
                 /* Device attributes */
@@ -605,6 +735,20 @@ static void parse_char(input_t *restrict input, char ch)
                     input->da_count = input->parm_count;
                 }
                 device_attributes_report(input);
+
+            } else if (ch == 'u') {
+                memset(&input->csi_u_params, 0, sizeof(input->csi_u_params));
+                input->csi_u_params.keycode = input->parms[0];
+                set_csi_u_params(input);
+
+                if (input->csi_u_params.keycode == 99 &&
+                    input->csi_u_params.modifiers == 5) {
+                    /* Ctrl+C - immediate exit */
+                    atomic_store_explicit(&input->exit_requested, true,
+                                          memory_order_relaxed);
+                    return;
+                }
+                dispatch_kkp_key(input);
             } else if (ch == 't') {
                 /* Cell size report */
                 if (input->parm_count >= 3 && input->parms[0] == 4)
@@ -618,12 +762,13 @@ static void parse_char(input_t *restrict input, char ch)
                 if (input->parm_prefix == '<')
                     parse_mouse_sgr(input, ch);
             } else {
+                set_csi_u_params(input);
                 csi_key(input, ch, input->parm_count > 0 ? input->parms[0] : 0,
                         input->parm_count > 1 ? input->parms[1] : 0);
             }
-
             input->state = STATE_GROUND;
         }
+        break;
     }
 }
 
@@ -643,7 +788,8 @@ static void *input_thread_func(void *arg)
 
         int ch;
 
-        /* If parser is in STATE_ESC, use timeout to detect standalone ESC */
+        /* If parser is in STATE_ESC, use timeout to detect standalone ESC
+         */
         if (input->state == STATE_ESC) {
             ch = os_getch_timeout(1); /*  1ms timeout for quick polling */
             if (ch < 0) {
@@ -669,7 +815,8 @@ static void *input_thread_func(void *arg)
             /* Got a character, reset ESC waiting */
             input->esc_waiting = false;
         } else {
-            /* Use short timeout to allow quick polling of pending releases */
+            /* Use short timeout to allow quick polling of pending releases
+             */
             ch = os_getch_timeout(
                 1); /*  1ms for responsive release processing */
             if (ch < 0) {
@@ -678,10 +825,48 @@ static void *input_thread_func(void *arg)
             }
         }
 
-        if (ch >= 0)
+        if (ch >= 0) {
             parse_char(input, (char) ch);
+        }
     }
     return NULL;
+}
+
+static bool kitty_keyboard_protocol_supported(void)
+{
+    char buffer[128];
+    memset(buffer, 0, sizeof(buffer));
+    bool supported = false;
+
+    const char *query = "\033[?u";
+    if (write(STDOUT_FILENO, query, 4) != 4) {
+        perror("write");
+        return false;
+    }
+
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(STDIN_FILENO, &readfds);
+
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 200000;
+
+    int ready = select(STDIN_FILENO + 1, &readfds, NULL, NULL, &timeout);
+
+    if (ready == -1) {
+        perror("select");
+    } else if (ready > 0) {
+        int nread = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
+        if (nread > 0) {
+            buffer[nread] = '\0';
+
+            if (strstr(buffer, "\033[?") != NULL && buffer[nread - 1] == 'u') {
+                supported = true;
+            }
+        }
+    }
+    return supported;
 }
 
 input_t *input_create(void)
@@ -702,6 +887,7 @@ input_t *input_create(void)
         .pending_count = 0,
         .held_keys_bitmap = {0}, /* Initialize bitmap to all zeros */
         .esc_waiting = false,
+        .kitty_keyboard_protocol_active = false,
     };
 
     /* Initialize pthread synchronization primitives */
@@ -735,6 +921,18 @@ input_t *input_create(void)
     printf("\033[?25l");
     fflush(stdout);
 
+    /* Query for Kitty keyboard protocol support */
+    if (kitty_keyboard_protocol_supported()) {
+        /* Enable kitty keyboard protocol.
+         * Kitty (Wayland) does not emit event type 2 (key release), even
+         * with mode 11. Works only on X11 / Xwayland. Probably a
+         * Wayland-specific limitation.
+         */
+        printf("\033[>%du", KKP_MODE_FLAGS);
+        fflush(stdout);
+        input->kitty_keyboard_protocol_active = true;
+    }
+
     /* Enable mouse tracking (SGR 1006 mode)
      * - ?1000h: Enable mouse button press/release events
      * - ?1003h: Enable "any event" tracking (includes motion)
@@ -754,8 +952,8 @@ input_t *input_create(void)
     }
 
     /* Wait for the input thread to signal it's ready to receive responses.
-     * This prevents timing issues where terminal queries are sent before the
-     * input thread is ready to process responses.
+     * This prevents timing issues where terminal queries are sent before
+     * the input thread is ready to process responses.
      */
     pthread_mutex_lock(&input->query_mutex);
     while (!input->ready)
@@ -794,7 +992,8 @@ void input_destroy(input_t *input)
 
         /* Multi-round drain with exponential backoff
          * Some terminals send responses with unpredictable delays.
-         * We drain multiple times with increasing timeouts to catch them all.
+         * We drain multiple times with increasing timeouts to catch them
+         * all.
          */
         struct pollfd pfd = {.fd = STDIN_FILENO, .events = POLLIN};
         static const int drain_timeouts[] = {10, 50, 100, 200}; /* ms */
@@ -814,6 +1013,9 @@ void input_destroy(input_t *input)
     }
 
     /* Restore terminal state */
+    if (input->kitty_keyboard_protocol_active) {
+        printf("\033[<u"); /* Disable kitty keyboard protocol */
+    }
     printf("\033[?1006l\033[?1003l\033[?1000l"); /* Disable mouse tracking */
     printf("\033[?25h");                         /*  Show cursor */
     fflush(stdout);

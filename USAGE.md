@@ -40,9 +40,6 @@ For continuous firing, click repeatedly - buttons use a 50ms release delay match
 | Right Alt | Strafe mode (hold to strafe with arrow keys) |
 | Right Shift | Run (hold to move faster) |
 
-Note: F and I keys are used for firing because Ctrl is difficult to capture in terminal environments.
-This follows the convention used in other terminal DOOM implementations.
-
 ### Weapons
 
 Press number keys to switch weapons:
@@ -121,14 +118,14 @@ In multiplayer games, press the following keys to send messages to specific play
 **Kitty is the only fully supported terminal.**
 
 - **Kitty**: Full support with all features (keyboard + mouse)
-  * Best performance and complete Kitty Graphics Protocol implementation
-  * Recommended terminal for optimal gameplay experience
-  * Download: https://sw.kovidgoyal.net/kitty/
+  - Best performance and complete Kitty Graphics Protocol implementation
+  - Recommended terminal for optimal gameplay experience
+  - Download: <https://sw.kovidgoyal.net/kitty/>
 
 - **Other terminals**: Limited or no support
-  * Ghostty, WezTerm: Partial Kitty Graphics Protocol support with known issues
-  * Most terminals lack proper protocol implementation
-  * May experience visual corruption, rendering issues, or missing features
+  - Ghostty, WezTerm: Partial Kitty Graphics Protocol support with known issues
+  - Most terminals lack proper protocol implementation
+  - May experience visual corruption, rendering issues, or missing features
 
 **Important**: This game requires the Kitty Graphics Protocol. Running in unsupported terminals will cause display problems. For the best experience, use Kitty terminal.
 
@@ -165,6 +162,7 @@ kitty-doom supports standard DOOM command line parameters:
 ### IWAD Detection
 
 kitty-doom automatically searches for IWAD files in the current directory and common locations:
+
 - `doom1.wad` (Shareware)
 - `doom.wad` (Registered)
 - `doomu.wad` (Ultimate DOOM)
@@ -187,16 +185,19 @@ Place the IWAD file in the same directory as the executable or set the `DOOMWADD
 ## Terminal Requirements
 
 ### Required Features
+
 - Kitty Graphics Protocol support
 - VT sequence parsing (arrow keys, function keys)
 - Minimum terminal size: 80x24 cells (larger recommended for better experience)
 
 ### Supported Terminal
+
 - **Kitty only**: This is the only fully supported terminal
-  * Download: https://sw.kovidgoyal.net/kitty/
-  * Other terminals are not recommended and may not work correctly
+  - Download: <https://sw.kovidgoyal.net/kitty/>
+  - Other terminals are not recommended and may not work correctly
 
 ### Display
+
 - True color (24-bit) support recommended
 - Hardware-accelerated rendering for smoother framerates
 
