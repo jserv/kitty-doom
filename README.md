@@ -122,3 +122,9 @@ The GPL is inherited from:
 - This Project: As a derivative work, also under GPL-2.0
 
 GPL ensures that DOOM and its derivatives remain free and open source.
+
+## Reference
+* [Rendering Interactive Graphics in Kitty](https://tmpvar.com/articles/rendering-interactive-graphics-in-kitty/)
+* [terminal-doom](https://github.com/cryptocode/terminal-doom)
+* [DOOM-ASCII](https://github.com/wojciech-graj/doom-ascii)
+* [XtermDOOM](https://gitlab.com/AutumnMeowMeow/xtermdoom)
