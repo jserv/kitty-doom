@@ -19,21 +19,32 @@ else
     SHA256_CMD =
 endif
 
+
 # DOOM1.WAD (shareware version)
 # Note: PureDOOM expects lowercase "doom1.wad" on case-sensitive filesystems (Linux).
 # The Makefile will create a symlink automatically via the check-wad-symlink target.
-DOOM1_WAD_URL = https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+DOOM1_ZIP_URL = https://archive.org/download/doom-wads/Doom%20%28v1.9%29.zip
+DOOM1_ZIP = doom1.zip
 DOOM1_WAD = DOOM1.WAD
-DOOM1_WAD_SHA256 = 1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771
+DOOM1_WAD_SHA256 = ff2c301b8719465a6e386a512bfa319931b7f64ea517d337c5a47afe03951902
 
-$(DOOM1_WAD):
+$(DOOM1_ZIP):
 	$(VECHO) "  GET\t$@\n"
-	$(Q)$(DOWNLOAD_CMD) $@ $(DOOM1_WAD_URL)
+	$(Q)$(DOWNLOAD_CMD) $@ $(DOOM1_ZIP_URL)
+
+$(DOOM1_WAD): $(DOOM1_ZIP)
+	$(VECHO) "  UNZIP\t$@\n"
+	$(Q)unzip -q -o -j $< "DOOM.WAD" -d .    
+	$(Q)mv DOOM.WAD $@
+    
 ifdef SHA256_CMD
 	$(VECHO) "  CHK\t$@ (SHA256)\n"
 	$(Q)echo "$(DOOM1_WAD_SHA256)  $@" | $(SHA256_CMD) >/dev/null || \
 		{ echo "Error: Checksum mismatch for $@"; rm -f "$@"; false; }
 endif
+	$(VECHO) "  RM\t$<\n"
+	$(Q)rm -f $<
+
 
 # PureDOOM.h download rule
 PUREDOOM_URL = https://raw.githubusercontent.com/Daivuk/PureDOOM/master/PureDOOM.h
