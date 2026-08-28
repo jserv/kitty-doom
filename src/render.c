@@ -153,7 +153,7 @@ void renderer_render_frame(renderer_t *restrict r,
                 /* First frame: create new image */
                 header_len = snprintf(
                     buf + buf_offset, rem,
-                    "\033_Ga=T,i=%ld,f=24,s=%d,v=%d,q=2,c=%d,r=%d,m=%d;",
+                    "\033_Ga=T,i=%ld,f=24,s=%d,v=%d,q=2,c=%d,r=%d,C=1,m=%d;",
                     r->kitty_id, WIDTH, HEIGHT, r->screen_cols, r->screen_rows,
                     more_chunks ? 1 : 0);
             } else {
