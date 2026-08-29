@@ -251,7 +251,7 @@ static bool is_key_held(input_t *restrict input, int key)
 
 static bool is_fire_key(int key)
 {
-    return key == ' ' || key == 'f' || key == 'F' || key == 'i' || key == 'I';
+    return key == 'f' || key == 'F' || key == 'i' || key == 'I';
 }
 
 static void ascii_key(input_t *restrict input, char ch)
