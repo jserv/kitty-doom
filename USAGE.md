@@ -35,8 +35,8 @@ For continuous firing, click repeatedly - buttons use a 50ms release delay match
 
 | Key | Action |
 |-----|--------|
-| Space, F, I | Fire weapon (any of these keys work) |
-| E | Use / Open doors / Activate switches |
+| F, I | Fire weapon (either key works) |
+| Space, E | Use / Open doors / Activate switches |
 | Right Alt | Strafe mode (hold to strafe with arrow keys) |
 | Right Shift | Run (hold to move faster) |
 
@@ -105,7 +105,7 @@ In multiplayer games, press the following keys to send messages to specific play
 
 1. Arrow keys automatically stay pressed when held - smooth continuous movement without lag.
 2. Use mouse for aiming - move the mouse to rotate view, left-click to fire.
-3. Use Space, F, or I keys to fire your weapon (easier than Ctrl in terminals).
+3. Use F or I keys to fire your weapon (easier than Ctrl in terminals).
 4. The game runs at 35 FPS (original DOOM timing).
 5. Press ESC to access the menu at any time.
 6. Press F11 to cycle through brightness levels if the game is too dark.
