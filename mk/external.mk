@@ -28,22 +28,20 @@ DOOM1_ZIP = doom1.zip
 DOOM1_WAD = DOOM1.WAD
 DOOM1_WAD_SHA256 = ff2c301b8719465a6e386a512bfa319931b7f64ea517d337c5a47afe03951902
 
-$(DOOM1_ZIP):
-	$(VECHO) "  GET\t$@\n"
-	$(Q)$(DOWNLOAD_CMD) $@ $(DOOM1_ZIP_URL)
-
-$(DOOM1_WAD): $(DOOM1_ZIP)
+$(DOOM1_WAD):
+	$(VECHO) "  GET\t$(DOOM1_ZIP)\n"
+	$(Q)$(DOWNLOAD_CMD) $(DOOM1_ZIP) $(DOOM1_ZIP_URL)
 	$(VECHO) "  UNZIP\t$@\n"
-	$(Q)unzip -q -o -j $< "DOOM.WAD" -d .    
+	$(Q)unzip -q -o -j $(DOOM1_ZIP) "DOOM.WAD" -d .
 	$(Q)mv DOOM.WAD $@
-    
+
 ifdef SHA256_CMD
 	$(VECHO) "  CHK\t$@ (SHA256)\n"
 	$(Q)echo "$(DOOM1_WAD_SHA256)  $@" | $(SHA256_CMD) >/dev/null || \
 		{ echo "Error: Checksum mismatch for $@"; rm -f "$@"; false; }
 endif
-	$(VECHO) "  RM\t$<\n"
-	$(Q)rm -f $<
+	$(VECHO) "  RM\t$(DOOM1_ZIP)\n"
+	$(Q)rm -f $(DOOM1_ZIP)
 
 
 # PureDOOM.h download rule
@@ -66,4 +64,4 @@ $(MINIAUDIO_HEADER):
 .PHONY: clean-external
 clean-external:
 	$(VECHO) "  CLEAN\t\texternal files\n"
-	$(Q)rm -f $(DOOM1_WAD) doom1.wad $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER)
+	$(Q)rm -f $(DOOM1_WAD) doom1.wad $(DOOM1_ZIP) $(PUREDOOM_HEADER) $(MINIAUDIO_HEADER)
