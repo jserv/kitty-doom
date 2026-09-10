@@ -150,7 +150,11 @@ void renderer_render_frame(renderer_t *restrict r,
         if (encoded_offset == 0) {
             /* First chunk includes all image metadata */
             if (r->frame_number == 0) {
-                /* First frame: create new image */
+                /* First frame: create new image.
+                 * C=1 keeps the cursor at home after placement. Without it
+                 * the terminal advances the cursor past the full-screen
+                 * image, wraps, and scrolls the top rows off.
+                 */
                 header_len = snprintf(
                     buf + buf_offset, rem,
                     "\033_Ga=T,i=%ld,f=24,s=%d,v=%d,q=2,c=%d,r=%d,C=1,m=%d;",
@@ -236,16 +240,6 @@ void renderer_render_frame(renderer_t *restrict r,
             return;
         }
         buf_offset += (size_t) anim_len;
-    }
-
-    /* On first frame, add newline to move cursor below image */
-    if (r->frame_number == 0) {
-        if (buf_offset + KITTY_TRAILER_SIZE > r->protocol_buffer_size) {
-            fprintf(stderr, "ERROR: Newline overflow\n");
-            return;
-        }
-        memcpy(buf + buf_offset, "\r\n", KITTY_TRAILER_SIZE);
-        buf_offset += KITTY_TRAILER_SIZE;
     }
 
     /* Single batched write */
