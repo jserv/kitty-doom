@@ -5,6 +5,7 @@ Play the legendary first-person shooter in terminals that support the protocol.
 
 Supported Terminals
 - [Kitty](https://sw.kovidgoyal.net/kitty/) - Full support, best performance
+- [AbsoluteTelnet/SSH](https://www.celestialsoftware.net/doom-on-absolutetelnet-ssh/) - Full support, excellent performance, watch the video!
 
 ## Features
 
