@@ -23,7 +23,9 @@
 static uint8_t palette_r_scalar[256] __attribute__((aligned(64)));
 static uint8_t palette_g_scalar[256] __attribute__((aligned(64)));
 static uint8_t palette_b_scalar[256] __attribute__((aligned(64)));
-static bool palette_initialized_scalar = false;
+
+static uint8_t cached_palette[256 * 3];
+static bool palette_initialized = false;
 
 __attribute__((unused)) static void palette_init_scalar(
     const uint8_t *restrict palette)
@@ -33,7 +35,6 @@ __attribute__((unused)) static void palette_init_scalar(
         palette_g_scalar[i] = palette[i * 3 + 1];
         palette_b_scalar[i] = palette[i * 3 + 2];
     }
-    palette_initialized_scalar = true;
 }
 
 __attribute__((unused)) static void palette_to_rgb24_scalar(
@@ -55,17 +56,24 @@ void palette_to_rgb24(const uint8_t *restrict indexed,
                       const uint8_t *restrict palette,
                       size_t npixels)
 {
+    if (!palette_initialized ||
+        memcmp(cached_palette, palette, sizeof(cached_palette)) != 0) {
+        memcpy(cached_palette, palette, sizeof(cached_palette));
+        palette_initialized = true;
+#if defined(__aarch64__) || defined(__ARM_NEON)
+        palette_init_neon(palette);
+#else
+        palette_init_scalar(palette);
+#endif
+    }
+
 #if defined(__aarch64__) || defined(__ARM_NEON)
     /* ARM NEON path: 1.5-1.8x speedup validated */
-    if (!palette_initialized_neon)
-        palette_init_neon(palette);
     palette_to_rgb24_neon_impl(indexed, rgb24, npixels);
 #else
     /* Scalar fallback: Used on x86_64 (compiler auto-vectorizes effectively)
      * and architectures without SIMD support.
      */
-    if (!palette_initialized_scalar)
-        palette_init_scalar(palette);
     palette_to_rgb24_scalar(indexed, rgb24, npixels);
 #endif
 }

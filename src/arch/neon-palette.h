@@ -39,7 +39,6 @@
 static uint8_t palette_r_neon[256] __attribute__((aligned(64)));
 static uint8_t palette_g_neon[256] __attribute__((aligned(64)));
 static uint8_t palette_b_neon[256] __attribute__((aligned(64)));
-static bool palette_initialized_neon = false;
 
 /* Split the packed RGB palette into separate R, G, B arrays for efficient SIMD
  * access patterns.
@@ -51,7 +50,6 @@ static inline void palette_init_neon(const uint8_t *restrict palette)
         palette_g_neon[i] = palette[i * 3 + 1];
         palette_b_neon[i] = palette[i * 3 + 2];
     }
-    palette_initialized_neon = true;
 }
 
 /* Convert indexed 8-bit palette data to RGB24 format using NEON SIMD.
