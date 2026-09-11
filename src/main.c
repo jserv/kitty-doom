@@ -303,40 +303,12 @@ int main(int argc, char **argv)
          * interleaved stores. Scalar gather loop is unavoidable without
          * hardware gather instructions, but SIMD benefits come from optimized
          * RGB interleaving.
-         *
-         * Note: PureDOOM's screen_palette is initialized dynamically during
-         * gameplay. We check initialization status and use fallback conversion
-         * until palette is ready.
          */
-        static int palette_ready = -1; /* -1=unknown, 0=not ready, 1=ready */
-
-        /* Check palette initialization on first call */
-        if (palette_ready == -1) {
-            int sum = screen_palette[0] + screen_palette[1] + screen_palette[2];
-            palette_ready = (sum > 0) ? 1 : 0;
-        }
-
-        if (palette_ready) {
-            /* SIMD path: indexed → palette_to_rgb24 → RGB24 */
-            const unsigned char *indexed = doom_get_framebuffer(1);
-            PROFILE_START();
-            palette_to_rgb24(indexed, rgb24_buffer, screen_palette, npixels);
-            PROFILE_END("  Palette conversion");
-            renderer_render_frame(r, rgb24_buffer);
-        } else {
-            /* Fallback: Use PureDOOM's conversion until palette ready */
-            const unsigned char *rgb24 = doom_get_framebuffer(3);
-            renderer_render_frame(r, rgb24);
-
-            /* Recheck palette every 10 frames */
-            static int check_counter = 0;
-            if (++check_counter % 10 == 0) {
-                int sum =
-                    screen_palette[0] + screen_palette[1] + screen_palette[2];
-                if (sum > 0)
-                    palette_ready = 1;
-            }
-        }
+        const unsigned char *indexed = doom_get_framebuffer(1);
+        PROFILE_START();
+        palette_to_rgb24(indexed, rgb24_buffer, screen_palette, npixels);
+        PROFILE_END("  Palette conversion");
+        renderer_render_frame(r, rgb24_buffer);
     }
 
     /* Input thread is requested to exit before cleanup
